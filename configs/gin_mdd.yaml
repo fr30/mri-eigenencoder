@@ -1,0 +1,40 @@
+# defaults:
+#   - override hydra/sweeper: optuna
+#   - override hydra/sweeper/sampler: tpe
+
+# hydra:
+#   sweeper:
+#     sampler:
+#       seed: 2137
+#       consider_magic_clip: true
+#     direction: maximize
+#     study_name: minigrid
+#     storage: null
+#     n_trials: 100
+#     n_jobs: 1
+#     max_failure_rate: 0.0
+#     params:
+#       lr: range(1e-4, 1e-3, 1e-4)
+
+# dataset: "yelp"
+
+wandb:
+  enabled: false
+  project: "gin-mdd"
+
+meta:
+  test: false
+  seed: 2137
+
+train:
+  epochs: 300
+  lr: 1e-3
+  lr_scheduler: true
+  lr_scheduler_step_size: 50
+  batch_size: 32
+
+model:
+  hidden_channels: 128
+  num_layers: 2
+  dropout: 0.5
+  norm: "batch" # []"batch", "layer", "graph", null]
