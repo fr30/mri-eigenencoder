@@ -17,10 +17,27 @@ class GINClassifier(nn.Module):
         )
 
     def forward(self, batch_graph):
-        x = self.gin(batch_graph.x, batch_graph.edge_index)
+        if self.emb_style != "none":
+            x = self._add_emb(batch_graph.x, batch_graph.batch_size)
+        else:
+            x = batch_graph.x
+
+        edge_index = batch_graph.edge_index
+        x = self.gin(x, edge_index)
         x = x.reshape(batch_graph.batch_size, -1, x.shape[1])
         x = x.mean(dim=1)
         return x.reshape(-1)
+
+    def _add_emb(self, x, batch_size):
+        nids = torch.arange(self.num_nodes).repeat(batch_size).to(x.device)
+        emb = self.emb(nids)
+
+        if self.emb_style == "concat":
+            x = torch.cat([x, emb], dim=1)
+        elif self.emb_style == "replace":
+            x = emb
+
+        return x
 
 
 class SFCN(nn.Module):

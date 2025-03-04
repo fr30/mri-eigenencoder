@@ -19,16 +19,16 @@
 # dataset: "yelp"
 
 wandb:
-  enabled: true
+  enabled: false
   project: "sfcn-mdd"
 
 meta:
   test: false
   seed: 2137
-  num_workers: 4
+  num_workers: 1
 
 train:
-  epochs: 20
+  epochs: 200
   lr: 1e-3
   lr_scheduler: False
   lr_scheduler_step_size: 10
