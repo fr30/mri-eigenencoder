@@ -1,12 +1,37 @@
+import torch
+
 from torch import nn
 from torch_geometric.nn.models import GIN
 
 
-class GINClassifier(nn.Module):
+class GINEncoder(nn.Module):
     def __init__(
-        self, in_channels, hidden_channels, num_layers, out_channels, dropout, norm=None
+        self,
+        in_channels,
+        hidden_channels,
+        num_layers,
+        out_channels,
+        dropout,
+        norm=None,
+        emb_style="none",  # ['none, 'concat', 'replace']
+        num_nodes=None,
+        emb_size=128,
     ):
-        super(GINClassifier, self).__init__()
+        super().__init__()
+        self.emb_style = emb_style
+        self.num_nodes = num_nodes
+
+        if emb_style not in ["none", "concat", "replace"]:
+            raise ValueError(f"Invalid emb_style: {emb_style}")
+
+        if emb_style != "none":
+            self.emb = nn.Embedding(num_nodes, emb_size)
+
+        if emb_style == "concat":
+            in_channels += emb_size
+        elif emb_style == "replace":
+            in_channels = emb_size
+
         self.gin = GIN(
             in_channels=in_channels,
             hidden_channels=hidden_channels,
@@ -40,13 +65,15 @@ class GINClassifier(nn.Module):
         return x
 
 
-class SFCN(nn.Module):
+class SFCNEncoder(nn.Module):
     def __init__(
-        self, channel_number=[32, 64, 128, 256, 256, 64], output_dim=40, dropout=True
+        self,
+        channel_number=[32, 64, 128, 256, 256, 64],
     ):
-        super(SFCN, self).__init__()
+        super().__init__()
         n_layer = len(channel_number)
         self.feature_extractor = nn.Sequential()
+
         for i in range(n_layer):
             if i == 0:
                 in_channel = 1
@@ -67,17 +94,14 @@ class SFCN(nn.Module):
                         in_channel, out_channel, maxpool=False, kernel_size=1, padding=0
                     ),
                 )
-        self.classifier = nn.Sequential()
+
         avg_shape = [5, 6, 5]
-        self.classifier.add_module("average_pool", nn.AvgPool3d(avg_shape))
-        if dropout is True:
-            self.classifier.add_module("dropout", nn.Dropout(0.5))
-        i = n_layer
-        in_channel = channel_number[-1]
-        out_channel = output_dim
-        self.classifier.add_module(
-            "conv_%d" % i, nn.Conv3d(in_channel, out_channel, padding=0, kernel_size=1)
-        )
+        self.feature_extractor.add_module("avgpool", nn.AvgPool3d(avg_shape))
+
+    def forward(self, x):
+        bsize = x.shape[0]
+        x = self.feature_extractor(x)
+        return x.reshape(bsize, -1)
 
     @staticmethod
     def conv_layer(
@@ -107,7 +131,18 @@ class SFCN(nn.Module):
             )
         return layer
 
+
+class SFCNClassifier(nn.Module):
+    def __init__(
+        self, channel_number=[32, 64, 128, 256, 256, 64], output_dim=40, dropout=True
+    ):
+        super().__init__()
+        self.encoder = SFCNEncoder(channel_number=channel_number)
+        self.dropout = nn.Dropout(0.5)
+        self.linear = nn.Linear(channel_number[-1], output_dim)
+
     def forward(self, x):
-        x_f = self.feature_extractor(x)
-        out = self.classifier(x_f)
-        return out.reshape(-1)
+        x = self.encoder(x)
+        x = self.dropout(x)
+        x = self.linear(x)
+        return x.reshape(-1)

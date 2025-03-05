@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 
 from torch_geometric.utils import dense_to_sparse
-from torch_geometric.data import Data
+from torch_geometric.data import Data, Batch
 from torch.utils.data import Dataset
 
 NP_TO_TORCH_DTYPES = {
@@ -28,11 +28,11 @@ ALLOWED_SPLITS = {
 class RESTfMRIDataset(Dataset):
     def __init__(
         self,
-        metadata_path="./REST-meta-MDD/metadata.csv",
         data_dir="./REST-meta-MDD/fMRI/AAL",
+        metadata_path="./REST-meta-MDD/metadata.csv",
         split="full",
     ):
-        super(RESTfMRIDataset, self).__init__()
+        super().__init__()
         self.cache_path = os.path.join("cache", data_dir, split)
         metadata = self._load_metadata(metadata_path, split)
 
@@ -42,7 +42,7 @@ class RESTfMRIDataset(Dataset):
             self.edge_indices, self.node_features = self._preprocess_raw_signals(
                 metadata, data_dir
             )
-            self._save_cache()
+            self._create_cache()
 
         self.num_samples = self.node_features.shape[0]
         self.num_nodes = self.node_features.shape[1]
@@ -96,7 +96,7 @@ class RESTfMRIDataset(Dataset):
         corr = 0.5 * np.log((1 + R) / (1 - R))
         return corr
 
-    def _save_cache(self):
+    def _create_cache(self):
         if not os.path.exists(self.cache_path):
             os.makedirs(self.cache_path)
 
@@ -151,7 +151,7 @@ class RESTsMRIDataset(Dataset):
         dtype=np.float32,  # Reduce to save memory
         inmemory=False,  # Load everything in memory
     ):
-        super(RESTsMRIDataset, self).__init__()
+        super().__init__()
         imgtypes = sorted(imgtypes)
         metadata = self._load_metadata(metadata_path, split)
         self.cache_path = os.path.join("cache", data_dir, "-".join(imgtypes))
@@ -236,3 +236,64 @@ class RESTsMRIDataset(Dataset):
         filepath = os.path.join(data_dir, imgtype, f"{subid}.nii.gz")
         image_shape = nib.load(filepath).get_fdata().shape
         return (len(self.ids), len(imgtypes), *image_shape)
+
+
+class RestJointDataset(Dataset):
+    def __init__(
+        self,
+        fmri_data_dir="./REST-meta-MDD/fMRI/AAL",
+        smri_data_dir="./REST-meta-MDD/REST-meta-MDD-VBM-Phase1-Sharing",
+        metadata_path="./REST-meta-MDD/metadata.csv",
+        imgtypes=[
+            "wc1"
+        ],  # Can be any combination of allowed imgtypes (["wc1", "mwc1"...])
+        split="full",  # Can be "train", "dev", "test" or "full"
+        normalize=True,  # Normalize images
+        dtype=np.float32,  # Reduce to save memory
+        inmemory=False,  # Load everything in memory
+    ):
+        self.fmri = RESTfMRIDataset(
+            data_dir=fmri_data_dir, metadata_path=metadata_path, split=split
+        )
+        self.smri = RESTsMRIDataset(
+            data_dir=smri_data_dir,
+            metadata_path=metadata_path,
+            imgtypes=imgtypes,
+            split=split,
+            normalize=normalize,
+            dtype=dtype,
+            inmemory=inmemory,
+        )
+
+    def __len__(self):
+        return len(self.fmri)
+
+    def __getitem__(self, idx):
+        img, label = self.smri[idx]
+        f_data = self.fmri[idx]
+        graph = Data(
+            x=f_data.x,
+            edge_index=f_data.edge_index,
+        )
+
+        return img, graph, label
+
+
+class DataLoader(torch.utils.data.DataLoader):
+    def __init__(self, dataset, batch_size=1, shuffle=False, **kwargs):
+        kwargs.pop("collate_fn", None)
+        super().__init__(
+            dataset, batch_size, shuffle, collate_fn=self._joint_batch_data, **kwargs
+        )
+
+    @staticmethod
+    def _joint_batch_data(x):
+        imgs = [i[0] for i in x]
+        graphs = [i[1] for i in x]
+        labels = [i[2] for i in x]
+
+        imgs_batch = torch.stack(imgs)
+        graphs_batch = Batch.from_data_list(graphs)
+        labels_batch = torch.tensor(labels)
+
+        return imgs_batch, graphs_batch, labels_batch

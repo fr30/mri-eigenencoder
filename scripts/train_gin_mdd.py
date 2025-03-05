@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import wandb
 
-from src.model import GINClassifier
+from src.model import GINEncoder
 from src.dataset import RESTfMRIDataset
 
 # from torch.utils.data import DataLoader
@@ -91,13 +91,16 @@ def main(cfg):
         shuffle=False,
     )
 
-    model = GINClassifier(
+    model = GINEncoder(
         in_channels=train_dataset.num_nodes,
         hidden_channels=cfg.model.hidden_channels,
         num_layers=cfg.model.num_layers,
         out_channels=1,
         dropout=cfg.model.dropout,
         norm=cfg.model.norm,
+        emb_style=cfg.model.emb_style,
+        num_nodes=train_dataset.num_nodes,
+        emb_size=cfg.model.emb_size,
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
 
@@ -121,6 +124,7 @@ def main(cfg):
                     "val_loss": val_loss,
                     "val_acc": val_acc,
                     "epoch_time": epoch_time,
+                    "max_acc": max_acc,
                 }
             )
         max_acc = max(max_acc, val_acc)

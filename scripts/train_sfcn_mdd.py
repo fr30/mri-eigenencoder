@@ -5,11 +5,9 @@ import torch.nn.functional as F
 import wandb
 
 from tqdm import tqdm
-from src.model import SFCN
+from src.model import SFCNClassifier
 from src.dataset import RESTsMRIDataset
 from torch.utils.data import DataLoader
-
-# from torch_geometric.loader import DataLoader
 
 
 def train_epoch(data_loader, model, optimizer, device):
@@ -95,7 +93,9 @@ def main(cfg):
         num_workers=cfg.meta.num_workers,
     )
 
-    model = SFCN(channel_number=cfg.model.channel_number, output_dim=1).to(device)
+    model = SFCNClassifier(channel_number=cfg.model.channel_number, output_dim=1).to(
+        device
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
 
     if cfg.train.lr_scheduler:
