@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 from torch import nn
 from torch_geometric.nn.models import GIN
@@ -51,7 +52,7 @@ class GINEncoder(nn.Module):
         x = self.gin(x, edge_index)
         x = x.reshape(batch_graph.batch_size, -1, x.shape[1])
         x = x.mean(dim=1)
-        return x.reshape(-1)
+        return x.reshape(batch_graph.batch_size, -1)
 
     def _add_emb(self, x, batch_size):
         nids = torch.arange(self.num_nodes).repeat(batch_size).to(x.device)
@@ -68,10 +69,10 @@ class GINEncoder(nn.Module):
 class SFCNEncoder(nn.Module):
     def __init__(
         self,
-        channel_number=[32, 64, 128, 256, 256, 64],
+        channel_number=[28, 58, 128, 256, 256, 128],
     ):
         super().__init__()
-        n_layer = len(channel_number)
+        n_layer = len(channel_number) - 1
         self.feature_extractor = nn.Sequential()
 
         for i in range(n_layer):
@@ -95,12 +96,17 @@ class SFCNEncoder(nn.Module):
                     ),
                 )
 
-        avg_shape = [5, 6, 5]
-        self.feature_extractor.add_module("avgpool", nn.AvgPool3d(avg_shape))
+        self.feature_extractor.add_module("avgpool", nn.AdaptiveAvgPool3d((1, 1, 1)))
+        self.dropout = nn.Dropout(0.5)
+        self.linear = nn.Sequential(
+            nn.Linear(channel_number[-2], channel_number[-1]),
+        )
 
     def forward(self, x):
         bsize = x.shape[0]
-        x = self.feature_extractor(x)
+        x = self.feature_extractor(x).reshape(bsize, -1)
+        x = self.dropout(x)
+        x = self.linear(x)
         return x.reshape(bsize, -1)
 
     @staticmethod
@@ -134,15 +140,16 @@ class SFCNEncoder(nn.Module):
 
 class SFCNClassifier(nn.Module):
     def __init__(
-        self, channel_number=[32, 64, 128, 256, 256, 64], output_dim=40, dropout=True
+        self,
+        channel_number=[32, 64, 128, 256, 256, 64],
+        output_dim=40,
     ):
         super().__init__()
         self.encoder = SFCNEncoder(channel_number=channel_number)
-        self.dropout = nn.Dropout(0.5)
         self.linear = nn.Linear(channel_number[-1], output_dim)
 
     def forward(self, x):
         x = self.encoder(x)
-        x = self.dropout(x)
+        x = F.relu(x)
         x = self.linear(x)
         return x.reshape(-1)
