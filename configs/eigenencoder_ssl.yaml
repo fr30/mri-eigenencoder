@@ -1,0 +1,44 @@
+# defaults:
+#   - override hydra/sweeper: optuna
+#   - override hydra/sweeper/sampler: tpe
+
+# hydra:
+#   sweeper:
+#     sampler:
+#       seed: 2137
+#       consider_magic_clip: true
+#     direction: maximize
+#     study_name: minigrid
+#     storage: null
+#     n_trials: 100
+#     n_jobs: 1
+#     max_failure_rate: 0.0
+#     params:
+#       lr: range(1e-4, 1e-3, 1e-4)
+
+# dataset: "yelp"
+
+wandb:
+  enabled: false
+  project: "eigenencoder-ssl"
+
+meta:
+  test: true
+  seed: 2136
+  num_workers: 2
+
+train:
+  epochs: 150
+  lr: 1e-3
+  batch_size: 8
+  
+gin_encoder:
+  hidden_channels: 128
+  num_layers: 2
+  dropout: 0.5
+  emb_style: "none" # []"none", "replace", "concat"]
+  emb_size: 128
+  norm: "batch" # []"batch", "layer", "graph", null]
+
+sfcn_encoder:
+  channel_number: [28, 58, 128, 256, 128]
