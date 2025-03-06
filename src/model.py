@@ -51,7 +51,7 @@ class GINEncoder(nn.Module):
         x = self.gin(x, edge_index)
         x = x.reshape(batch_graph.batch_size, -1, x.shape[1])
         x = x.mean(dim=1)
-        return x.reshape(-1)
+        return x.reshape(batch_graph.batch_size, -1)
 
     def _add_emb(self, x, batch_size):
         nids = torch.arange(self.num_nodes).repeat(batch_size).to(x.device)
