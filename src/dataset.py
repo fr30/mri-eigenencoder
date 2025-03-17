@@ -31,9 +31,14 @@ class RESTfMRIDataset(Dataset):
         data_dir="./REST-meta-MDD/fMRI/AAL",
         metadata_path="./REST-meta-MDD/metadata.csv",
         split="full",
+        cache_path=None,
     ):
         super().__init__()
-        self.cache_path = os.path.join("cache", data_dir, split)
+        if cache_path is None:
+            self.cache_path = os.path.join("cache", data_dir, split)
+        else:
+            self.cache_path = os.path.join(cache_path, data_dir, split)
+
         metadata = self._load_metadata(metadata_path, split)
 
         if self._cache_exists():
@@ -114,7 +119,7 @@ class RESTfMRIDataset(Dataset):
         node_features_path = os.path.join(self.cache_path, "node_features.pt")
         if not os.path.exists(node_features_path):
             return False
-
+        print("CACHE EXIST")
         return True
 
     def _load_cache(self):
@@ -150,11 +155,17 @@ class RESTsMRIDataset(Dataset):
         normalize=True,  # Normalize images
         dtype=np.float32,  # Reduce to save memory
         inmemory=False,  # Load everything in memory
+        cache_path=None,
     ):
         super().__init__()
         imgtypes = sorted(imgtypes)
         metadata = self._load_metadata(metadata_path, split)
-        self.cache_path = os.path.join("cache", data_dir, "-".join(imgtypes))
+
+        if cache_path is None:
+            self.cache_path = os.path.join("cache", data_dir, "-".join(imgtypes))
+        else:
+            self.cache_path = os.path.join(cache_path, data_dir, "-".join(imgtypes))
+
         self.normalize = normalize
         self.dtype = dtype
         self.ids = metadata.subID
@@ -251,9 +262,13 @@ class RestJointDataset(Dataset):
         normalize=True,  # Normalize images
         dtype=np.float32,  # Reduce to save memory
         inmemory=False,  # Load everything in memory
+        cache_path=None,
     ):
         self.fmri = RESTfMRIDataset(
-            data_dir=fmri_data_dir, metadata_path=metadata_path, split=split
+            data_dir=fmri_data_dir,
+            metadata_path=metadata_path,
+            split=split,
+            cache_path=cache_path,
         )
         self.smri = RESTsMRIDataset(
             data_dir=smri_data_dir,
@@ -263,6 +278,7 @@ class RestJointDataset(Dataset):
             normalize=normalize,
             dtype=dtype,
             inmemory=inmemory,
+            cache_path=cache_path,
         )
 
     def __len__(self):

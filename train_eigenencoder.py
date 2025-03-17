@@ -1,49 +1,46 @@
 import hydra
 import time
 import torch
-import torch.nn.functional as F
+import os
 import wandb
 
-from src.model import GINEncoder, SFCNEncoder
+from src.model import GINEncoderWithProjector, SFCNEncoderWithProjector
 from src.dataset import RestJointDataset, DataLoader
 from src.eigenencoder import MCALoss, fmcat_loss
+from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
 from tqdm import tqdm
 
 
 def train_epoch(
-    data_loader, criterion, fmri_enc, smri_enc, optimizer_f, optimizer_s, device
+    data_loader,
+    criterion,
+    fmri_enc,
+    smri_enc,
+    optimizer_f,
+    optimizer_s,
+    scheduler,
+    device,
 ):
     fmri_enc.train()
     smri_enc.train()
     running_loss = 0
     running_tsd = 0
-    rfnorm_cum = 0
-    ffnorm_cum = 0
-    fgradnorm_cum = 0
-    step = 0
+    smri_fnorm_cum = 0
+    fmri_fnorm_cum = 0
 
-    # for smri_d, fmri_d, _ in tqdm(data_loader):
-    for smri_d, fmri_d, _ in data_loader:
+    for smri_d, fmri_d, _ in tqdm(data_loader):
         smri_d = smri_d.to(device)
         fmri_d = fmri_d.to(device)
 
-        optimizer_s.zero_grad()
-        optimizer_f.zero_grad()
+        scheduler.adjust_lr(optimizer_s)
+        scheduler.adjust_lr(optimizer_f)
 
         fmri_f = fmri_enc(fmri_d)
         smri_f = smri_enc(smri_d)
 
-        if step == 0:
-            print("Norms")
-            print(fmri_f.norm().item(), smri_f.norm().item())
-
-        step += 1
-
+        optimizer_s.zero_grad()
+        optimizer_f.zero_grad()
         loss, tsd = criterion(fmri_f, smri_f)
-
-        rfnorm_cum += torch.sum(torch.norm(fmri_f, 1)).item()
-        ffnorm_cum += torch.sum(torch.norm(smri_f, 1)).item()
-
         loss.backward()
         optimizer_s.step()
         optimizer_f.step()
@@ -51,13 +48,15 @@ def train_epoch(
         running_loss += loss.item()
         running_tsd += tsd.item()
 
+        fmri_fnorm_cum += torch.sum(torch.norm(fmri_f, dim=1)).item()
+        smri_fnorm_cum += torch.sum(torch.norm(smri_f, dim=1)).item()
+
     cum_loss = running_loss * data_loader.batch_size / len(data_loader.dataset)
     cum_tsd = running_tsd * data_loader.batch_size / len(data_loader.dataset)
-    rfnorm_avg = rfnorm_cum / len(data_loader.dataset)
-    ffnorm_avg = ffnorm_cum / len(data_loader.dataset)
-    fgradnorm_avg = fgradnorm_cum / len(data_loader.dataset)
+    fmri_fnorm_avg = fmri_fnorm_cum / len(data_loader.dataset)
+    smri_fnorm_avg = smri_fnorm_cum / len(data_loader.dataset)
 
-    return cum_loss, cum_tsd, rfnorm_avg, ffnorm_avg, fgradnorm_avg
+    return cum_loss, cum_tsd, fmri_fnorm_avg, smri_fnorm_avg
 
 
 @torch.no_grad()
@@ -71,8 +70,8 @@ def test_epoch(data_loader, criterion, fmri_enc, smri_enc, device):
         smri_d = smri_d.to(device)
         fmri_d = fmri_d.to(device)
 
-        smri_f = smri_enc(smri_d)
         fmri_f = fmri_enc(fmri_d)
+        smri_f = smri_enc(smri_d)
         loss, tsd = criterion(fmri_f, smri_f)
 
         running_loss += loss.item()
@@ -92,68 +91,81 @@ def main(cfg):
             config={
                 "meta": cfg.meta,
                 "train": cfg.train,
-                "model": cfg.model,
             },
         )
 
     if cfg.meta.seed is not None:
         torch.manual_seed(cfg.meta.seed)
+
     if torch.cuda.is_available():
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
 
-    train_dataset = RestJointDataset(split="train")
-    val_dataset = RestJointDataset(split="dev")
+    train_dataset = RestJointDataset(
+        split="train", cache_path=cfg.meta.cache_path, inmemory=False
+    )
+    val_dataset = RestJointDataset(
+        split="dev", cache_path=cfg.meta.cache_path, inmemory=False
+    )
 
     train_dataloader = DataLoader(
-        val_dataset,
+        train_dataset,
         batch_size=cfg.train.batch_size,
         shuffle=True,
         num_workers=cfg.meta.num_workers,
+        drop_last=True,
     )
+
     val_dataloader = DataLoader(
         val_dataset,
         batch_size=cfg.train.batch_size,
         shuffle=False,
         num_workers=cfg.meta.num_workers,
+        drop_last=True,
     )
 
-    smri_enc = SFCNEncoder(channel_number=cfg.sfcn_encoder.channel_number).to(device)
-    fmri_enc = GINEncoder(
+    smri_enc = SFCNEncoderWithProjector(
+        channel_number=cfg.sfcn_encoder.channel_number, emb_dim=cfg.sfcn_encoder.emb_dim
+    ).to(device)
+    fmri_enc = GINEncoderWithProjector(
         in_channels=train_dataset.fmri.num_nodes,
         hidden_channels=cfg.gin_encoder.hidden_channels,
         num_layers=cfg.gin_encoder.num_layers,
-        out_channels=cfg.gin_encoder.hidden_channels,
         dropout=cfg.gin_encoder.dropout,
         norm=cfg.gin_encoder.norm,
         emb_style=cfg.gin_encoder.emb_style,
         num_nodes=train_dataset.fmri.num_nodes,
-        emb_size=cfg.gin_encoder.emb_size,
+        emb_dim=cfg.gin_encoder.emb_dim,
     ).to(device)
 
     optimizer_f = torch.optim.Adam(fmri_enc.parameters(), lr=cfg.train.lr)
     optimizer_s = torch.optim.Adam(smri_enc.parameters(), lr=cfg.train.lr)
-    # criterion = MCALoss(emb_size=cfg.gin_encoder.hidden_channels)
-    criterion = fmcat_loss
 
-    # if cfg.train.lr_scheduler:
-    #     scheduler1 = torch.optim.lr_scheduler.StepLR(
-    #         optimizer_f, step_size=cfg.train.lr_scheduler_step_size, gamma=0.5
-    #     )
-    #     scheduler2 = torch.optim.lr_scheduler.StepLR(
-    #         optimizer_2, step_size=cfg.train.lr_scheduler_step_size, gamma=0.5
-    #     )
+    criterion = MCALoss(emb_size=cfg.gin_encoder.emb_dim * 4, device=device)
+    # criterion = fmcat_loss
+
+    if cfg.train.lr_scheduler:
+        scheduler = CosDelayWithWarmupScheduler(
+            cfg.train.lr, len(train_dataloader), cfg.train.epochs
+        )
+    else:
+        scheduler = IdentityScheduler()
+
+    if cfg.meta.save_model_freq > 0:
+        if not os.path.exists(cfg.meta.save_model_path):
+            os.makedirs(cfg.meta.save_model_path)
 
     for epoch in range(1, cfg.train.epochs + 1):
         start = time.time()
-        train_loss, train_tsd, norm1, norm2, fgrad_norm = train_epoch(
+        train_loss, train_tsd, fmri_fnorm, smri_fnorm = train_epoch(
             train_dataloader,
             criterion,
             fmri_enc,
             smri_enc,
             optimizer_f,
             optimizer_s,
+            scheduler,
             device,
         )
         epoch_time = time.time() - start
@@ -165,19 +177,28 @@ def main(cfg):
                 {
                     "Epoch": epoch,
                     "Train loss": train_loss,
+                    "Train TSD": train_tsd,
                     "Validation loss": val_loss,
+                    "Val TSD": val_tsd,
                     "Epoch time": epoch_time,
-                    "Average rfnorm": norm1,
-                    "Average ffnorm": norm2,
-                    "Average fgradient norm": fgrad_norm,
+                    "Avg. fMRI f-norm": fmri_fnorm,
+                    "Avg. sMRI f-norm": smri_fnorm,
                 }
             )
         print(
             f"Epoch: {epoch}\nTrain loss: {train_loss:.4f} tsd: {train_tsd:.4f}, Val loss: {val_loss:.4f} tsd: {val_tsd:.4f}"
         )
-        print(
-            f"Avg. rfnorm {norm1:.4f}, Avg. ffnorm: {norm2:.4f}, Avg. fgradnorm: {fgrad_norm:.4f}"
-        )
+        print(f"Avg. fMRI f-norm {fmri_fnorm:.4f}, Avg. sMRI f-norm: {smri_fnorm:.4f}")
+
+        if cfg.meta.save_model_freq > 0 and epoch % cfg.meta.save_model_freq == 0:
+            torch.save(
+                fmri_enc.encoder.state_dict(),
+                f"{cfg.meta.save_model_path}/fmri_enc_ep{epoch}.pt",
+            )
+            torch.save(
+                smri_enc.encoder.state_dict(),
+                f"{cfg.meta.save_model_path}/smri_enc_ep{epoch}.pt",
+            )
 
 
 if __name__ == "__main__":
