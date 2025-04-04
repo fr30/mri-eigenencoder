@@ -141,9 +141,7 @@ class SFCNEncoder(nn.Module):
 
         self.feature_extractor.add_module("avgpool", nn.AdaptiveAvgPool3d((1, 1, 1)))
         self.dropout = nn.Dropout(0.5)
-        self.linear = nn.Sequential(
-            nn.Linear(channel_number[-1], emb_dim),
-        )
+        self.linear = nn.Linear(channel_number[-1], emb_dim)
 
     def forward(self, x):
         x = self.feature_extractor(x).reshape(x.shape[0], -1)
@@ -182,12 +180,15 @@ class SFCNEncoder(nn.Module):
 
 class SFCNClassifier(nn.Module):
     def __init__(
-        self, channel_number=[32, 64, 128, 256, 256, 64], output_dim=40, dropout=True
+        self,
+        output_dim,
+        channel_number=[28, 58, 128, 256, 512],
+        emb_dim=128,
     ):
         super().__init__()
-        self.encoder = SFCNEncoder(channel_number=channel_number)
+        self.encoder = SFCNEncoder(channel_number=channel_number, emb_dim=emb_dim)
         self.dropout = nn.Dropout(0.5)
-        self.linear = nn.Linear(channel_number[-1], output_dim)
+        self.linear = nn.Linear(emb_dim, output_dim)
 
     def forward(self, x):
         x = self.encoder(x)

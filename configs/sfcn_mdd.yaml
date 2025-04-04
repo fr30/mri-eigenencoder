@@ -32,7 +32,8 @@ train:
   lr: 1e-3
   lr_scheduler: False
   lr_scheduler_step_size: 10
-  batch_size: 64
+  batch_size: 4
 
-model:
-  channel_number: [28, 58, 128, 256, 64]
+sfcn_encoder:
+  channel_number: [28, 58, 128, 256, 512]
+  emb_dim: 128

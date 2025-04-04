@@ -119,7 +119,7 @@ class RESTfMRIDataset(Dataset):
         node_features_path = os.path.join(self.cache_path, "node_features.pt")
         if not os.path.exists(node_features_path):
             return False
-        print("CACHE EXIST")
+
         return True
 
     def _load_cache(self):
@@ -201,7 +201,6 @@ class RESTsMRIDataset(Dataset):
         for subid in self.ids:
             if not os.path.exists(os.path.join(self.cache_path, f"{subid}.npy")):
                 return False
-
         return True
 
     def _create_cache(self, data_dir, imgtypes):

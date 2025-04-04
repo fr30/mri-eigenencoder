@@ -7,16 +7,18 @@ import wandb
 from tqdm import tqdm
 from src.model import SFCNClassifier
 from src.dataset import RESTsMRIDataset
+from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
 from torch.utils.data import DataLoader
 
 
-def train_epoch(data_loader, model, optimizer, device):
+def train_epoch(data_loader, model, optimizer, scheduler, device):
     model.train()
     running_loss = 0
     correct = 0
 
     for x, y in tqdm(data_loader):
         x, y = x.to(device), y.to(device)
+        scheduler.adjust_lr(optimizer)
         optimizer.zero_grad()
         out = model(x)
         loss = F.binary_cross_entropy_with_logits(out, y.to(torch.float32))
@@ -93,20 +95,26 @@ def main(cfg):
         num_workers=cfg.meta.num_workers,
     )
 
-    model = SFCNClassifier(channel_number=cfg.model.channel_number, output_dim=1).to(
-        device
-    )
+    model = SFCNClassifier(
+        output_dim=1,
+        channel_number=cfg.sfcn_encoder.channel_number,
+        emb_dim=cfg.sfcn_encoder.emb_dim,
+    ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
 
     if cfg.train.lr_scheduler:
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=cfg.train.lr_scheduler_step_size, gamma=0.5
+        scheduler = CosDelayWithWarmupScheduler(
+            cfg.train.lr, len(train_dataloader), cfg.train.epochs
         )
+    else:
+        scheduler = IdentityScheduler()
 
     max_acc = 0
     for epoch in range(1, cfg.train.epochs + 1):
         start = time.time()
-        train_loss, train_acc = train_epoch(train_dataloader, model, optimizer, device)
+        train_loss, train_acc = train_epoch(
+            train_dataloader, model, optimizer, scheduler, device
+        )
         epoch_time = time.time() - start
         val_loss, val_acc = test_epoch(val_dataloader, model, device)
         if cfg.wandb.enabled:
@@ -125,9 +133,6 @@ def main(cfg):
             f"Epoch: {epoch}\nTrain loss: {train_loss:.4f}, Train acc: {train_acc:.4f}, Val loss: {val_loss:.4f}, Val acc: {val_acc:.4f}, Max acc: {max_acc:.4f}"
         )
         print(f"Epoch time: {epoch_time:.2f}s")
-
-        if cfg.train.lr_scheduler:
-            scheduler.step()
 
     if cfg.meta.test:
         _, test_acc = test_epoch(test_dataloader, model, device)
