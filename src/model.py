@@ -1,7 +1,9 @@
 import torch
+import torch.nn.functional as F
 
 from torch import nn
 from torch_geometric.nn.models import GIN
+from torch_geometric.nn.pool import global_mean_pool
 
 
 class GINEncoder(nn.Module):
@@ -35,13 +37,10 @@ class GINEncoder(nn.Module):
         self.gin = GIN(
             in_channels=in_channels,
             hidden_channels=hidden_channels,
-            out_channels=512,
+            out_channels=emb_dim,
             num_layers=num_layers,
             dropout=dropout,
             norm=norm,
-        )
-        self.linear = nn.Sequential(
-            nn.Linear(512, emb_dim),
         )
 
     def forward(self, batch_graph):
@@ -52,10 +51,7 @@ class GINEncoder(nn.Module):
 
         edge_index = batch_graph.edge_index
         x = self.gin(x, edge_index)
-        x = x.reshape(batch_graph.batch_size, -1, x.shape[1])
-        x = x.mean(dim=1)
-        x = self.linear(x)
-        return x
+        return global_mean_pool(x, batch_graph.batch)
 
     def _add_emb(self, x, batch_size):
         nids = torch.arange(self.num_nodes).repeat(batch_size).to(x.device)
@@ -66,6 +62,41 @@ class GINEncoder(nn.Module):
         elif self.emb_style == "replace":
             x = emb
 
+        return x
+
+
+class GINClassifier(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        hidden_channels,
+        num_layers,
+        dropout,
+        norm=None,
+        emb_style="none",  # ['none, 'concat', 'replace']
+        num_nodes=None,
+        emb_dim=128,
+    ):
+        super().__init__()
+        self.encoder = GINEncoder(
+            in_channels=in_channels,
+            hidden_channels=hidden_channels,
+            num_layers=num_layers,
+            dropout=dropout,
+            norm=norm,
+            emb_style=emb_style,
+            num_nodes=num_nodes,
+            emb_dim=emb_dim,
+        )
+        self.cls_head = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim * 4),
+            nn.ReLU(),
+            nn.Linear(emb_dim * 4, emb_dim * 4),
+        )
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.cls_head(x)
         return x
 
 
@@ -138,10 +169,10 @@ class SFCNEncoder(nn.Module):
                         in_channel, out_channel, maxpool=False, kernel_size=1, padding=0
                     ),
                 )
-
         self.feature_extractor.add_module("avgpool", nn.AdaptiveAvgPool3d((1, 1, 1)))
         self.dropout = nn.Dropout(0.5)
-        self.linear = nn.Linear(channel_number[-1], emb_dim)
+        # Change to self.linear = nn.Linear(...) when training next series of checkpoints
+        self.linear = nn.Sequential(nn.Linear(channel_number[-1], emb_dim))
 
     def forward(self, x):
         x = self.feature_extractor(x).reshape(x.shape[0], -1)
@@ -182,17 +213,22 @@ class SFCNClassifier(nn.Module):
     def __init__(
         self,
         output_dim,
+        encoder=None,
         channel_number=[28, 58, 128, 256, 512],
         emb_dim=128,
     ):
         super().__init__()
-        self.encoder = SFCNEncoder(channel_number=channel_number, emb_dim=emb_dim)
-        self.dropout = nn.Dropout(0.5)
+
+        if encoder is None:
+            self.encoder = SFCNEncoder(channel_number=channel_number, emb_dim=emb_dim)
+        else:
+            self.encoder = encoder
+
         self.linear = nn.Linear(emb_dim, output_dim)
 
     def forward(self, x):
         x = self.encoder(x)
-        x = self.dropout(x)
+        x = F.relu(x)
         x = self.linear(x)
         return x.reshape(-1)
 
