@@ -116,6 +116,7 @@ def main(cfg):
         shuffle=True,
         num_workers=cfg.meta.num_workers,
         drop_last=True,
+        augment=cfg.train.augment_smri,
     )
 
     val_dataloader = DataLoader(
@@ -124,6 +125,7 @@ def main(cfg):
         shuffle=False,
         num_workers=cfg.meta.num_workers,
         drop_last=True,
+        augment=False,
     )
 
     smri_enc = SFCNEncoderWithProjector(

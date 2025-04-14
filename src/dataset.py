@@ -4,6 +4,7 @@ import os
 import pandas as pd
 import torch
 
+from src.utils import aug_batch, patch_extraction
 from torch_geometric.utils import dense_to_sparse
 from torch_geometric.data import Data, Batch
 from torch.utils.data import Dataset
@@ -295,20 +296,44 @@ class RestJointDataset(Dataset):
 
 
 class DataLoader(torch.utils.data.DataLoader):
-    def __init__(self, dataset, batch_size=1, shuffle=False, **kwargs):
+    def __init__(
+        self,
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        augment=True,
+        patch_size=64,
+        **kwargs,
+    ):
         kwargs.pop("collate_fn", None)
         super().__init__(
             dataset, batch_size, shuffle, collate_fn=self._joint_batch_data, **kwargs
         )
+        self.augment = augment
+        self.patch_size = patch_size
 
-    @staticmethod
-    def _joint_batch_data(x):
+    # @staticmethod
+    def _joint_batch_data(self, x):
         imgs = [i[0] for i in x]
+
+        if self.augment:
+            imgs = self._augment_data(imgs)
+        #     imgs_batch = torch.tensor(imgs)
+        # else:
+        imgs_batch = torch.stack(imgs)
+
         graphs = [i[1] for i in x]
         labels = [i[2] for i in x]
 
-        imgs_batch = torch.stack(imgs)
         graphs_batch = Batch.from_data_list(graphs)
         labels_batch = torch.tensor(labels)
 
         return imgs_batch, graphs_batch, labels_batch
+
+    def _augment_data(self, X):
+        "Apply augmentation"
+
+        X_aug = patch_extraction(X, sizePatches=self.patch_size, Npatches=1)
+        X_aug = aug_batch(X_aug)
+
+        return [torch.tensor(x.copy()).to(torch.float32) for x in X_aug]
