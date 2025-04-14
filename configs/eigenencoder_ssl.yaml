@@ -33,17 +33,22 @@ meta:
 train:
   epochs: 30
   lr: 5e-4
-  lr_scheduler: False
-  batch_size: 5
+  lr_scheduler: True
+  batch_size: 8
   
+model:
+  emb_dim: 256
+  norm_out: 'batch_norm' # ['none', 'sigmoid', 'batch_norm']
+
 gin_encoder:
   hidden_channels: 256
   num_layers: 2
   dropout: 0.5
   emb_style: "none" # []"none", "replace", "concat"]
-  emb_dim: 128
   norm: "batch" # []"batch", "layer", "graph", null]
+  norm_out: 'sigmoid' # ['none', 'sigmoid', 'batch_norm']
 
 sfcn_encoder:
   channel_number: [28, 58, 128, 256, 512]
-  emb_dim: 128
+  norm_out: 'sigmoid' #  ['none', 'sigmoid', 'batch_norm']
+  

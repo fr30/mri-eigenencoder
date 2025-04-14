@@ -57,8 +57,8 @@ class MCALoss:
         RG = RFG[dim:, dim:]
         P = RFG[:dim, dim:]
 
-        RF_EI = torch.linalg.pinv(RF_E, hermitian=True)
-        RG_EI = torch.linalg.pinv(RG_E, hermitian=True)
+        RF_EI = torch.inverse(RF_E)
+        RG_EI = torch.inverse(RG_E)
         COST = (
             -RF_EI @ RF @ RF_EI @ P_E @ RG_EI @ P_E.T
             + RF_EI @ P @ RG_EI @ P_E.T
@@ -66,9 +66,9 @@ class MCALoss:
             + RF_EI @ P_E @ RG_EI @ P.T
         )
 
-        RF_EI2 = torch.inverse(RF_E)
-        RG_EI2 = torch.inverse(RG_E)
-        TSD = RF_EI2 @ P_E @ RG_EI2 @ P_E.T
+        # RF_EI2 = torch.inverse(RF_E)
+        # RG_EI2 = torch.inverse(RG_E)
+        TSD = RF_EI @ P_E @ RG_EI @ P_E.T
 
         return -torch.trace(COST), -torch.trace(TSD).detach()
 
@@ -85,7 +85,7 @@ class MCALoss:
         return v_t, (v_t / (1 - beta**i))
 
 
-loss_obj = MCALoss(emb_size=128 * 4, device="cuda")
+loss_obj = MCALoss(emb_size=256 * 4, device="cuda")
 
 
 def fmcat_loss(fmri_f, smri_f):
@@ -106,7 +106,7 @@ def fmcat_loss(fmri_f, smri_f):
     eps = torch.eye(fmri_f.shape[1], device=fmri_f.device) * 1e-5
     RF = (fmri_f.T @ fmri_f) / fmri_f.shape[0] + eps
     RG = (smri_f.T @ smri_f) / smri_f.shape[0] + eps
-    P = (fmri_f.T @ smri_f) / smri_f.shape[0] + eps
+    P = (fmri_f.T @ smri_f) / smri_f.shape[0]
 
     lhs = torch.linalg.lstsq(RF, P).solution
     rhs = torch.linalg.lstsq(RG, P.T).solution

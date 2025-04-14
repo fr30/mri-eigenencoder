@@ -17,6 +17,7 @@ class GINEncoder(nn.Module):
         emb_style="none",  # ['none, 'concat', 'replace']
         num_nodes=None,
         emb_dim=128,
+        norm_out="sigmoid",  # ['sigmoid', 'batch_norm', 'none']
     ):
         super().__init__()
         self.emb_style = emb_style
@@ -43,6 +44,16 @@ class GINEncoder(nn.Module):
             norm=norm,
         )
 
+        if norm_out == "batch_norm":
+            self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
+        elif norm_out == "sigmoid":
+            self.norm_out = F.sigmoid
+        else:
+            self.norm_out = nn.Identity()
+        # self.linear = nn.Sequential(
+        #     nn.Linear(512, emb_dim),
+        # )
+
     def forward(self, batch_graph):
         if self.emb_style != "none":
             x = self._add_emb(batch_graph.x, batch_graph.batch_size)
@@ -51,7 +62,14 @@ class GINEncoder(nn.Module):
 
         edge_index = batch_graph.edge_index
         x = self.gin(x, edge_index)
-        return global_mean_pool(x, batch_graph.batch)
+        x = self.norm_out(x)
+        x = global_mean_pool(x, batch_graph.batch)
+        return x
+        # x = self.gin(x, edge_index)
+        # x = x.reshape(batch_graph.batch_size, -1, x.shape[1])
+        # x = x.mean(dim=1)
+        # x = self.linear(x)
+        # return x
 
     def _add_emb(self, x, batch_size):
         nids = torch.arange(self.num_nodes).repeat(batch_size).to(x.device)
@@ -111,6 +129,8 @@ class GINEncoderWithProjector(nn.Module):
         emb_style="none",  # ['none, 'concat', 'replace']
         num_nodes=None,
         emb_dim=128,
+        norm_out="batch_norm",  # ['sigmoid', 'batch_norm', 'none']
+        enc_norm_out="sigmoid",  # ['sigmoid', 'batch_norm', 'none']
     ):
         super().__init__()
         self.encoder = GINEncoder(
@@ -122,6 +142,7 @@ class GINEncoderWithProjector(nn.Module):
             emb_style=emb_style,
             num_nodes=num_nodes,
             emb_dim=emb_dim,
+            norm_out=enc_norm_out,
         )
         self.projector = nn.Sequential(
             nn.Linear(emb_dim, emb_dim * 4),
@@ -134,17 +155,28 @@ class GINEncoderWithProjector(nn.Module):
             nn.BatchNorm1d(emb_dim * 4),
             nn.ReLU(),
         )
-        self.bn = nn.BatchNorm1d(emb_dim * 4)
+        if norm_out == "batch_norm":
+            self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
+        elif norm_out == "sigmoid":
+            self.norm_out = F.sigmoid
+        else:
+            self.norm_out = nn.Identity()
 
     def forward(self, x):
         x = self.encoder(x)
         x = self.projector(x)
-        x = self.bn(x)
+        x = self.norm_out(x)
+        # Try replacing batchnorm with sigmoid
         return x
 
 
 class SFCNEncoder(nn.Module):
-    def __init__(self, channel_number=[28, 58, 128, 256, 512], emb_dim=128):
+    def __init__(
+        self,
+        channel_number=[28, 58, 128, 256, 512],
+        emb_dim=128,
+        norm_out="sigmoid",  # ['sigmoid', 'batch_norm', 'none']
+    ):
         super().__init__()
         n_layer = len(channel_number)
         self.feature_extractor = nn.Sequential()
@@ -174,10 +206,18 @@ class SFCNEncoder(nn.Module):
         # Change to self.linear = nn.Linear(...) when training next series of checkpoints
         self.linear = nn.Sequential(nn.Linear(channel_number[-1], emb_dim))
 
+        if norm_out == "batch_norm":
+            self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
+        elif norm_out == "sigmoid":
+            self.norm_out = F.sigmoid
+        else:
+            self.norm_out = nn.Identity()
+
     def forward(self, x):
         x = self.feature_extractor(x).reshape(x.shape[0], -1)
         x = self.dropout(x)
         x = self.linear(x)
+        x = self.norm_out(x)
         return x
 
     @staticmethod
@@ -234,9 +274,17 @@ class SFCNClassifier(nn.Module):
 
 
 class SFCNEncoderWithProjector(nn.Module):
-    def __init__(self, channel_number=[28, 58, 128, 256, 512], emb_dim=128):
+    def __init__(
+        self,
+        channel_number=[28, 58, 128, 256, 512],
+        emb_dim=128,
+        norm_out="batch_norm",  # ['sigmoid', 'batch_norm', 'none']
+        enc_norm_out="sigmoid",  # ['sigmoid', 'batch_norm', 'none']
+    ):
         super().__init__()
-        self.encoder = SFCNEncoder(channel_number=channel_number, emb_dim=emb_dim)
+        self.encoder = SFCNEncoder(
+            channel_number=channel_number, emb_dim=emb_dim, norm_out=enc_norm_out
+        )
         self.projector = nn.Sequential(
             nn.Linear(emb_dim, emb_dim * 4),
             nn.BatchNorm1d(emb_dim * 4),
@@ -248,10 +296,19 @@ class SFCNEncoderWithProjector(nn.Module):
             nn.BatchNorm1d(emb_dim * 4),
             nn.ReLU(),
         )
-        self.bn = nn.BatchNorm1d(emb_dim * 4, affine=False)
+
+        if norm_out == "batch_norm":
+            self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
+        elif norm_out == "sigmoid":
+            self.norm_out = F.sigmoid
+        else:
+            self.norm_out = nn.Identity()
 
     def forward(self, x):
         x = self.encoder(x)
         x = self.projector(x)
-        x = self.bn(x)
+        x = self.norm_out(x)
+        # Try replacing batchnorm with sigmoid
+        # Add some noise to input
+        # Run for fewer epochs
         return x

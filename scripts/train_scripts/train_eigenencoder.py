@@ -88,6 +88,7 @@ def main(cfg):
     if cfg.wandb.enabled:
         run = wandb.init(
             project=cfg.wandb.project,
+            name=cfg.wandb.run_name,
             config={
                 "meta": cfg.meta,
                 "train": cfg.train,
@@ -126,7 +127,10 @@ def main(cfg):
     )
 
     smri_enc = SFCNEncoderWithProjector(
-        channel_number=cfg.sfcn_encoder.channel_number, emb_dim=cfg.sfcn_encoder.emb_dim
+        channel_number=cfg.sfcn_encoder.channel_number,
+        enc_norm_out=cfg.sfcn_encoder.norm_out,
+        emb_dim=cfg.model.emb_dim,
+        norm_out=cfg.model.norm_out,
     ).to(device)
     fmri_enc = GINEncoderWithProjector(
         in_channels=train_dataset.fmri.num_nodes,
@@ -135,14 +139,16 @@ def main(cfg):
         dropout=cfg.gin_encoder.dropout,
         norm=cfg.gin_encoder.norm,
         emb_style=cfg.gin_encoder.emb_style,
+        enc_norm_out=cfg.gin_encoder.norm_out,
         num_nodes=train_dataset.fmri.num_nodes,
-        emb_dim=cfg.gin_encoder.emb_dim,
+        emb_dim=cfg.model.emb_dim,
+        norm_out=cfg.model.norm_out,
     ).to(device)
 
     optimizer_f = torch.optim.Adam(fmri_enc.parameters(), lr=cfg.train.lr)
     optimizer_s = torch.optim.Adam(smri_enc.parameters(), lr=cfg.train.lr)
 
-    criterion = MCALoss(emb_size=cfg.gin_encoder.emb_dim * 4, device=device)
+    criterion = MCALoss(emb_size=cfg.model.emb_dim * 4, device=device)
     # criterion = fmcat_loss
 
     if cfg.train.lr_scheduler:

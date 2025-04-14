@@ -19,7 +19,8 @@
 # dataset: "yelp"
 
 wandb:
-  enabled: true
+  run_name: "gin_noemb_256"
+  enabled: false
   project: "gin-mdd"
 
 meta:
@@ -27,16 +28,16 @@ meta:
   seed: 2136
 
 train:
-  epochs: 300
-  lr: 1e-3
+  epochs: 100
+  lr: 1e-2
   lr_scheduler: false
   lr_scheduler_step_size: 50
   batch_size: 32
 
-model:
-  hidden_channels: 128
+encoder:
+  hidden_channels: 256
   num_layers: 2
   dropout: 0.5
-  emb_style: "replace" # []"none", "replace", "concat"]
-  emb_size: 128
+  emb_style: "none" # []"none", "replace", "concat"]
+  emb_dim: 128
   norm: "batch" # []"batch", "layer", "graph", null]
