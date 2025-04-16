@@ -19,7 +19,7 @@
 # dataset: "yelp"
 
 wandb:
-  run_name: "sfcn_emb_ep20_256"
+  run_name: "sfcn_random_256"
   enabled: true
   project: "sfcn-mdd"
 
@@ -30,11 +30,15 @@ meta:
 
 train:
   epochs: 100
-  lr: 1e-2
+  lr: 1e-3
   lr_scheduler: True
   batch_size: 8
+
+classifier:
+  hidden_dim: 1024
 
 encoder:
   channel_number: [28, 58, 128, 256, 512]
   emb_dim: 256
-  checkpoint_path: "models/tsd_pinv_bigbatch/smri_enc_ep20.pt" # Can be null
+  checkpoint_path: null # Can be null
+  norm_out: 'sigmoid' # ['none', 'sigmoid', 'batch_norm']

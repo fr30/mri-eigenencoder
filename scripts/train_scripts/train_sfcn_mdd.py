@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import wandb
 
 from tqdm import tqdm
-from src.model import SFCNClassifier
+from src.model import SFCNClassifier, SFCNEncoder
 from src.dataset import RESTsMRIDataset
 from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
 from torch.utils.data import DataLoader
@@ -58,10 +58,10 @@ def main(cfg):
         run = wandb.init(
             # entity=cfg.wandb.entity,
             project=cfg.wandb.project,
+            name=cfg.wandb.run_name,
             config={
                 "meta": cfg.meta,
                 "train": cfg.train,
-                "model": cfg.model,
             },
         )
 
@@ -95,10 +95,22 @@ def main(cfg):
         num_workers=cfg.meta.num_workers,
     )
 
+    encoder = SFCNEncoder(
+        channel_number=cfg.encoder.channel_number,
+        emb_dim=cfg.encoder.emb_dim,
+        norm_out=cfg.encoder.norm_out,
+    ).to(device)
+
+    if cfg.encoder.checkpoint_path is not None:
+        encoder.load_state_dict(
+            torch.load(cfg.encoder.checkpoint_path, weights_only=True)
+        )
+
     model = SFCNClassifier(
         output_dim=1,
-        channel_number=cfg.sfcn_encoder.channel_number,
-        emb_dim=cfg.sfcn_encoder.emb_dim,
+        emb_dim=cfg.encoder.emb_dim,
+        encoder=encoder,
+        hidden_dim=cfg.classifier.hidden_dim,
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
 

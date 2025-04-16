@@ -175,3 +175,4 @@ wandb
 *.pth
 models
 results
+visuals

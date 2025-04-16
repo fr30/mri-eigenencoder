@@ -207,7 +207,7 @@ class SFCNEncoder(nn.Module):
         self.linear = nn.Sequential(nn.Linear(channel_number[-1], emb_dim))
 
         if norm_out == "batch_norm":
-            self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
+            self.norm_out = nn.BatchNorm1d(emb_dim, affine=False)
         elif norm_out == "sigmoid":
             self.norm_out = F.sigmoid
         else:
@@ -256,6 +256,7 @@ class SFCNClassifier(nn.Module):
         encoder=None,
         channel_number=[28, 58, 128, 256, 512],
         emb_dim=128,
+        hidden_dim=1024,
     ):
         super().__init__()
 
@@ -264,11 +265,12 @@ class SFCNClassifier(nn.Module):
         else:
             self.encoder = encoder
 
-        self.linear = nn.Linear(emb_dim, output_dim)
+        self.linear = nn.Sequential(
+            nn.Linear(emb_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, output_dim)
+        )
 
     def forward(self, x):
         x = self.encoder(x)
-        x = F.relu(x)
         x = self.linear(x)
         return x.reshape(-1)
 
