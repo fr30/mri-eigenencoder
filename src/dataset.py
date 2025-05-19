@@ -4,10 +4,10 @@ import os
 import pandas as pd
 import torch
 
-from src.utils import aug_batch, patch_extraction
 from torch_geometric.utils import dense_to_sparse
 from torch_geometric.data import Data, Batch
 from torch.utils.data import Dataset
+from sklearn.model_selection import train_test_split
 
 NP_TO_TORCH_DTYPES = {
     np.float16: torch.float16,
@@ -15,14 +15,14 @@ NP_TO_TORCH_DTYPES = {
     np.float64: torch.float64,
 }
 
-ALLOWED_SPLITS = {
-    # Regex for matching all columns excluding the ones in the dev and test splits
-    # using negative pattern matching
-    "train": r"(?!(S4|S8|S15|S17)-).*",
-    "dev": r"((S4|S8)-)",
-    "test": r"((S15|S17)-)",
-    "full": r".*",
-}
+# ALLOWED_SPLITS = {
+#     # Regex for matching all columns excluding the ones in the dev and test splits
+#     # using negative pattern matching
+#     "train": r"(?!(S4|S8|S15|S17)-).*",
+#     "dev": r"((S4|S8)-)",
+#     "test": r"((S15|S17)-)",
+#     "full": r".*",
+# }
 
 
 # Dataset for fMRI data that stores everything in memory
@@ -35,29 +35,49 @@ class RESTfMRIDataset(Dataset):
         cache_path=None,
     ):
         super().__init__()
-        if cache_path is None:
-            self.cache_path = os.path.join("cache", data_dir, split)
-        else:
-            self.cache_path = os.path.join(cache_path, data_dir, split)
-
         metadata = self._load_metadata(metadata_path, split)
+        self.ids = metadata.subID
 
-        if self._cache_exists():
-            self.edge_indices, self.node_features = self._load_cache()
+        if cache_path is None:
+            self.cache_path = os.path.join("cache", data_dir)
         else:
-            self.edge_indices, self.node_features = self._preprocess_raw_signals(
-                metadata, data_dir
-            )
-            self._create_cache()
+            self.cache_path = os.path.join(cache_path, data_dir)
 
+        if not self._cache_exists():
+            self._create_cache(data_dir)
+
+        self.edge_indices, self.node_features = self._load_cache()
         self.num_samples = self.node_features.shape[0]
         self.num_nodes = self.node_features.shape[1]
-        self.labels = torch.tensor(metadata.label.values)
+        self.labels = torch.from_numpy(metadata.label.values)
 
     def _load_metadata(self, metadata_path, split):
         metadata = pd.read_csv(metadata_path)
-        cond = metadata.subID.str.match(ALLOWED_SPLITS[split])
-        return metadata[cond].reset_index(drop=True)
+        sites = metadata["subID"].str.extract(r"S(\d+)-")[0].astype(int)
+        train, test = train_test_split(
+            metadata, test_size=0.2, random_state=42, stratify=sites
+        )
+        dev, test = train_test_split(
+            test, test_size=0.5, random_state=42, stratify=sites[test.index]
+        )
+
+        if split == "train":
+            self.sites = sites[train.index]
+            return train.reset_index(drop=True)
+        elif split == "dev":
+            self.sites = sites[dev.index]
+            return dev.reset_index(drop=True)
+        elif split == "test":
+            self.sites = sites[test.index]
+            return test.reset_index(drop=True)
+        elif split == "full":
+            self.sites = sites
+            return metadata.reset_index(drop=True)
+        else:
+            raise ValueError("Invalid split. Use 'train', 'dev', 'test' or 'full'.")
+
+        # cond = metadata.subID.str.match(ALLOWED_SPLITS[split])
+        # return metadata[cond].reset_index(drop=True)
 
     def __len__(self):
         return self.num_samples
@@ -69,30 +89,6 @@ class RESTfMRIDataset(Dataset):
             y=self.labels[idx],
         )
 
-    def _preprocess_raw_signals(self, metadata, data_dir):
-        adj_list = []
-        node_features_list = []
-        for id in metadata.subID:
-            # Read the raw signals and create correlation matrix
-            filepath = os.path.join(data_dir, f"{id}.npy")
-            raw_signals = np.load(filepath)
-            corr = self._create_corr(raw_signals)
-
-            # Transform correlation matrix to adjacency matrix
-            node_features = torch.tensor(corr, dtype=torch.float32)
-            topk = node_features.reshape(-1)
-            topk, _ = torch.sort(abs(topk), dim=0, descending=True)
-            threshold = topk[int(node_features.shape[0] ** 2 / 20 * 2)]
-            # TODO: Fix a bug in the line below, where edge_indices might have
-            # different shapes because of multiples of the same correlation value
-            adj = (torch.abs(node_features) >= threshold).to(int)
-            edge_index = dense_to_sparse(adj)[0]
-
-            adj_list.append(edge_index)
-            node_features_list.append(node_features)
-
-        return torch.stack(adj_list), torch.stack(node_features_list)
-
     def _create_corr(self, data):
         eps = 1e-16
         R = np.corrcoef(data)
@@ -102,33 +98,69 @@ class RESTfMRIDataset(Dataset):
         corr = 0.5 * np.log((1 + R) / (1 - R))
         return corr
 
-    def _create_cache(self):
+    def _create_cache(self, data_dir):
         if not os.path.exists(self.cache_path):
             os.makedirs(self.cache_path)
 
-        edge_indices_path = os.path.join(self.cache_path, "edge_indices.pt")
-        node_features_path = os.path.join(self.cache_path, "node_features.pt")
+        num_edges = None
 
-        torch.save(self.edge_indices, edge_indices_path)
-        torch.save(self.node_features, node_features_path)
+        for subid in self.ids:
+            edge_index_path = os.path.join(self.cache_path, f"{subid}_edge_index.npy")
+            node_features_path = os.path.join(
+                self.cache_path, f"{subid}_node_features.npy"
+            )
+
+            if os.path.exists(edge_index_path) and os.path.exists(node_features_path):
+                continue
+
+            # Read the raw signals and create correlation matrix
+            filepath = os.path.join(data_dir, f"{subid}.npy")
+            raw_signals = np.load(filepath)
+            corr = self._create_corr(raw_signals)
+
+            # Transform correlation matrix to adjacency matrix
+            node_features = torch.tensor(corr, dtype=torch.float32)
+            topk = node_features.reshape(-1)
+            topk, _ = torch.sort(abs(topk), dim=0, descending=True)
+            threshold = topk[int(node_features.shape[0] ** 2 / 20 * 2)]
+            adj = (torch.abs(node_features) >= threshold).to(int)
+            edge_index = dense_to_sparse(adj)[0]
+
+            if num_edges is None:
+                num_edges = edge_index.shape[1]
+
+            edge_index = edge_index[:, :num_edges]
+
+            np.save(edge_index_path, edge_index)
+            np.save(node_features_path, node_features)
 
     def _cache_exists(self):
-        edge_indices_path = os.path.join(self.cache_path, "edge_indices.pt")
-        if not os.path.exists(edge_indices_path):
+        if not os.path.exists(self.cache_path):
             return False
 
-        node_features_path = os.path.join(self.cache_path, "node_features.pt")
-        if not os.path.exists(node_features_path):
-            return False
+        for subid in self.ids:
+            if not os.path.exists(os.path.join(self.cache_path, f"{subid}.npy")):
+                return False
 
         return True
 
     def _load_cache(self):
-        edge_indices_path = os.path.join(self.cache_path, "edge_indices.pt")
-        node_features_path = os.path.join(self.cache_path, "node_features.pt")
+        edge_indices_list = []
+        node_features_list = []
 
-        edge_indices = torch.load(edge_indices_path, weights_only=True)
-        node_features = torch.load(node_features_path, weights_only=True)
+        for subid in self.ids:
+            edge_index_path = os.path.join(self.cache_path, f"{subid}_edge_index.npy")
+            node_features_path = os.path.join(
+                self.cache_path, f"{subid}_node_features.npy"
+            )
+
+            edge_index = torch.tensor(np.load(edge_index_path))
+            node_features = torch.tensor(np.load(node_features_path))
+            edge_indices_list.append(edge_index)
+            node_features_list.append(node_features)
+
+        edge_indices = torch.stack(edge_indices_list)
+        node_features = torch.stack(node_features_list)
         return edge_indices, node_features
 
 
@@ -161,16 +193,16 @@ class RESTsMRIDataset(Dataset):
         super().__init__()
         imgtypes = sorted(imgtypes)
         metadata = self._load_metadata(metadata_path, split)
+        self.ids = metadata.subID
+        self.normalize = normalize
+        self.dtype = dtype
 
         if cache_path is None:
             self.cache_path = os.path.join("cache", data_dir, "-".join(imgtypes))
         else:
             self.cache_path = os.path.join(cache_path, data_dir, "-".join(imgtypes))
 
-        self.normalize = normalize
-        self.dtype = dtype
-        self.ids = metadata.subID
-        self.labels = torch.tensor(metadata.label.values)
+        self.labels = torch.from_numpy(metadata.label.values)
         self.dshape = self._get_data_shape(data_dir, imgtypes)
 
         if not self._cache_exists():
@@ -192,8 +224,31 @@ class RESTsMRIDataset(Dataset):
 
     def _load_metadata(self, metadata_path, split):
         metadata = pd.read_csv(metadata_path)
-        cond = metadata.subID.str.match(ALLOWED_SPLITS[split])
-        return metadata[cond].reset_index(drop=True)
+        sites = metadata["subID"].str.extract(r"S(\d+)-")[0].astype(int)
+        train, test = train_test_split(
+            metadata, test_size=0.2, random_state=42, stratify=sites
+        )
+        dev, test = train_test_split(
+            test, test_size=0.5, random_state=42, stratify=sites[test.index]
+        )
+
+        if split == "train":
+            self.sites = sites[train.index]
+            return train.reset_index(drop=True)
+        elif split == "dev":
+            self.sites = sites[dev.index]
+            return dev.reset_index(drop=True)
+        elif split == "test":
+            self.sites = sites[test.index]
+            return test.reset_index(drop=True)
+        elif split == "full":
+            self.sites = sites
+            return metadata.reset_index(drop=True)
+        else:
+            raise ValueError("Invalid split. Use 'train', 'dev', 'test' or 'full'.")
+
+        # cond = metadata.subID.str.match(ALLOWED_SPLITS[split])
+        # return metadata[cond].reset_index(drop=True)
 
     def _cache_exists(self):
         if not os.path.exists(self.cache_path):
@@ -202,6 +257,7 @@ class RESTsMRIDataset(Dataset):
         for subid in self.ids:
             if not os.path.exists(os.path.join(self.cache_path, f"{subid}.npy")):
                 return False
+
         return True
 
     def _create_cache(self, data_dir, imgtypes):
@@ -249,7 +305,22 @@ class RESTsMRIDataset(Dataset):
         return (len(self.ids), len(imgtypes), *image_shape)
 
 
-class RestJointDataset(Dataset):
+# class RESTsMRIDinoDataset(RESTsMRIDataset):
+#     def __getitem__(self, idx):
+#         x, y = self.load_data_fn(idx)
+#         x = x.unbind(dim=-1)
+#         x = torch.concat(x, dim=-1)
+#         x = x.unbind(dim=0)
+#         x = torch.concat(x, dim=-1)
+#         h, w = x.shape
+#         print(x.shape)
+#         x = x[: h // 14 * 14, : w // 14 * 14]
+#         x = x.unsqueeze(0).expand(3, -1, -1)
+
+#         return x, y
+
+
+class RESTJointDataset(Dataset):
     def __init__(
         self,
         fmri_data_dir="./REST-meta-MDD/fMRI/AAL",
@@ -263,13 +334,28 @@ class RestJointDataset(Dataset):
         dtype=np.float32,  # Reduce to save memory
         inmemory=False,  # Load everything in memory
         cache_path=None,
+        # dino=False,
     ):
+        super().__init__()
         self.fmri = RESTfMRIDataset(
             data_dir=fmri_data_dir,
             metadata_path=metadata_path,
             split=split,
             cache_path=cache_path,
         )
+
+        # if dino:
+        #     self.smri = RESTsMRIDinoDataset(
+        #         data_dir=smri_data_dir,
+        #         metadata_path=metadata_path,
+        #         imgtypes=imgtypes,
+        #         split=split,
+        #         normalize=normalize,
+        #         dtype=dtype,
+        #         inmemory=inmemory,
+        #         cache_path=cache_path,
+        #     )
+        # else:
         self.smri = RESTsMRIDataset(
             data_dir=smri_data_dir,
             metadata_path=metadata_path,
@@ -301,7 +387,7 @@ class DataLoader(torch.utils.data.DataLoader):
         dataset,
         batch_size=1,
         shuffle=False,
-        augment=True,
+        # augment=True,
         patch_size=64,
         **kwargs,
     ):
@@ -309,17 +395,15 @@ class DataLoader(torch.utils.data.DataLoader):
         super().__init__(
             dataset, batch_size, shuffle, collate_fn=self._joint_batch_data, **kwargs
         )
-        self.augment = augment
+        # self.augment = augment
         self.patch_size = patch_size
 
-    # @staticmethod
     def _joint_batch_data(self, x):
         imgs = [i[0] for i in x]
 
-        if self.augment:
-            imgs = self._augment_data(imgs)
-        #     imgs_batch = torch.tensor(imgs)
-        # else:
+        # if self.augment:
+        #     imgs = self._augment_data(imgs)
+
         imgs_batch = torch.stack(imgs)
 
         graphs = [i[1] for i in x]
@@ -330,10 +414,10 @@ class DataLoader(torch.utils.data.DataLoader):
 
         return imgs_batch, graphs_batch, labels_batch
 
-    def _augment_data(self, X):
-        "Apply augmentation"
+    # def _augment_data(self, X):
+    #     "Apply augmentation"
 
-        X_aug = patch_extraction(X, sizePatches=self.patch_size, Npatches=1)
-        X_aug = aug_batch(X_aug)
+    #     X_aug = patch_extraction(X, sizePatches=self.patch_size, Npatches=1)
+    #     X_aug = aug_batch(X_aug)
 
-        return [torch.tensor(x.copy()).to(torch.float32) for x in X_aug]
+    #     return [torch.tensor(x.copy()).to(torch.float32) for x in X_aug]

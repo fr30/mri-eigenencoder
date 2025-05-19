@@ -178,6 +178,7 @@ class SFCNEncoder(nn.Module):
         norm_out="sigmoid",  # ['sigmoid', 'batch_norm', 'none']
     ):
         super().__init__()
+        self.emb_dim = emb_dim
         n_layer = len(channel_number)
         self.feature_extractor = nn.Sequential()
 
@@ -247,6 +248,34 @@ class SFCNEncoder(nn.Module):
                 nn.ReLU(),
             )
         return layer
+
+
+class DinoEncoder(nn.Module):
+    def __init__(self, size="s"):  # ['s', 'b', 'l', 'g']
+        super().__init__()
+        # self.feature_extractor = torch.hub.load(
+        #     "facebookresearch/dinov2", "dinov2_vitb14_reg"
+        # )
+        self.feature_extractor = torch.hub.load(
+            "facebookresearch/dinov2", f"dinov2_vit{size}14_reg"
+        )
+        self.emb_dim = self.feature_extractor.embed_dim
+
+    def forward(self, x):
+        x = self._cube_to_slides(x)
+        x = self.feature_extractor(x)
+        return x
+
+    @staticmethod
+    def _cube_to_slides(x):
+        x = x.unbind(dim=-1)
+        x = torch.concat(x, dim=-1)
+        x = x.unbind(dim=1)
+        x = torch.concat(x, dim=-1)
+        _, h, w = x.shape
+        x = x[:, : h // 14 * 14, : w // 14 * 14]
+        x = x.unsqueeze(1).expand(-1, 3, -1, -1)
+        return x
 
 
 class SFCNClassifier(nn.Module):

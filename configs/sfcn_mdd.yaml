@@ -20,25 +20,30 @@
 
 wandb:
   run_name: "sfcn_random_256"
-  enabled: true
+  enabled: false
   project: "sfcn-mdd"
 
 meta:
   test: false
   seed: 2137
   num_workers: 2
+  kfold: True
+  kfold_n_splits: 5
 
 train:
   epochs: 100
   lr: 1e-3
   lr_scheduler: True
-  batch_size: 8
+  batch_size: 2
 
 classifier:
   hidden_dim: 1024
 
 encoder:
+  dino: true
+  dino_size: 's' # ['s', 'b', 'l', 'g']
   channel_number: [28, 58, 128, 256, 512]
   emb_dim: 256
   checkpoint_path: null # Can be null
   norm_out: 'sigmoid' # ['none', 'sigmoid', 'batch_norm']
+  freeze: false
