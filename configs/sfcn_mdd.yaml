@@ -27,7 +27,7 @@ meta:
   test: false
   seed: 2137
   num_workers: 2
-  kfold: True
+  kfold: false
   kfold_n_splits: 5
 
 train:
@@ -44,6 +44,6 @@ encoder:
   dino_size: 's' # ['s', 'b', 'l', 'g']
   channel_number: [28, 58, 128, 256, 512]
   emb_dim: 256
-  checkpoint_path: null # Can be null
   norm_out: 'sigmoid' # ['none', 'sigmoid', 'batch_norm']
   freeze: false
+  checkpoint_path: null # Can be null

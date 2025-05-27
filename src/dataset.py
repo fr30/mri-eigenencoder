@@ -1,3 +1,4 @@
+import GCL.augmentors as A
 import nibabel as nib
 import numpy as np
 import os
@@ -8,6 +9,7 @@ from torch_geometric.utils import dense_to_sparse
 from torch_geometric.data import Data, Batch
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
+
 
 NP_TO_TORCH_DTYPES = {
     np.float16: torch.float16,
@@ -119,7 +121,7 @@ class RESTfMRIDataset(Dataset):
             corr = self._create_corr(raw_signals)
 
             # Transform correlation matrix to adjacency matrix
-            node_features = torch.tensor(corr, dtype=torch.float32)
+            node_features = torch.from_numpy(corr, dtype=torch.float32)
             topk = node_features.reshape(-1)
             topk, _ = torch.sort(abs(topk), dim=0, descending=True)
             threshold = topk[int(node_features.shape[0] ** 2 / 20 * 2)]
@@ -154,8 +156,8 @@ class RESTfMRIDataset(Dataset):
                 self.cache_path, f"{subid}_node_features.npy"
             )
 
-            edge_index = torch.tensor(np.load(edge_index_path))
-            node_features = torch.tensor(np.load(node_features_path))
+            edge_index = torch.from_numpy(np.load(edge_index_path))
+            node_features = torch.from_numpy(np.load(node_features_path))
             edge_indices_list.append(edge_index)
             node_features_list.append(node_features)
 
@@ -285,7 +287,7 @@ class RESTsMRIDataset(Dataset):
     def _lazy_load_data(self, idx):
         filename = self.ids[idx]
         data = np.load(os.path.join(self.cache_path, f"{filename}.npy"))
-        data_t = torch.tensor(data, dtype=NP_TO_TORCH_DTYPES[self.dtype])
+        data_t = torch.from_numpy(data, dtype=NP_TO_TORCH_DTYPES[self.dtype])
         return data_t, self.labels[idx]
 
     def _inmemory_load_data(self, idx):
@@ -295,7 +297,7 @@ class RESTsMRIDataset(Dataset):
         self.data = torch.zeros(self.dshape, dtype=NP_TO_TORCH_DTYPES[self.dtype])
         for i, subid in enumerate(self.ids):
             filepath = os.path.join(self.cache_path, f"{subid}.npy")
-            self.data[i] = torch.tensor(np.load(filepath))
+            self.data[i] = torch.from_numpy(np.load(filepath))
 
     def _get_data_shape(self, data_dir, imgtypes):
         subid = self.ids[0]
@@ -410,7 +412,7 @@ class DataLoader(torch.utils.data.DataLoader):
         labels = [i[2] for i in x]
 
         graphs_batch = Batch.from_data_list(graphs)
-        labels_batch = torch.tensor(labels)
+        labels_batch = torch.from_numpy(labels)
 
         return imgs_batch, graphs_batch, labels_batch
 
@@ -420,4 +422,40 @@ class DataLoader(torch.utils.data.DataLoader):
     #     X_aug = patch_extraction(X, sizePatches=self.patch_size, Npatches=1)
     #     X_aug = aug_batch(X_aug)
 
-    #     return [torch.tensor(x.copy()).to(torch.float32) for x in X_aug]
+    #     return [torch.from_numpy(x.copy()).to(torch.float32) for x in X_aug]
+
+
+class BTDataLoader(torch.utils.data.DataLoader):
+    def __init__(
+        self,
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        **kwargs,
+    ):
+        kwargs.pop("collate_fn", None)
+        super().__init__(
+            dataset, batch_size, shuffle, collate_fn=self._batch_data, **kwargs
+        )
+        self.aug1 = self._construct_aug()
+        self.aug2 = self._construct_aug()
+
+    def _batch_data(self, x):
+        x1 = [Data(*self.aug1(d.x, d.edge_index)) for d in x]
+        x1_batch = Batch.from_data_list(x1)
+        x2 = [Data(*self.aug2(d.x, d.edge_index)) for d in x]
+        x2_batch = Batch.from_data_list(x2)
+        # x1_batch, x2_batch = Batch.from_data_list(x), Batch.from_data_list(x)
+        return x1_batch, x2_batch
+
+    def _construct_aug(self):
+        return A.RandomChoice(
+            [
+                A.RWSampling(num_seeds=1000, walk_length=10),
+                A.NodeDropping(pn=0.1),
+                A.FeatureMasking(pf=0.1),
+                # A.EdgeAdding(pe=0.1),
+                A.EdgeRemoving(pe=0.1),
+            ],
+            num_choices=1,
+        )

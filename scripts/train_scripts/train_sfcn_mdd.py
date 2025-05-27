@@ -145,18 +145,13 @@ def kfold_experiment(cfg, run, device):
                 torch.load(cfg.encoder.checkpoint_path, weights_only=True)
             )
 
-        if cfg.encoder.checkpoint_path is not None:
-            encoder.load_state_dict(
-                torch.load(cfg.encoder.checkpoint_path, weights_only=True)
-            )
-
         if cfg.encoder.freeze:
             for param in model.encoder.parameters():
                 param.requires_grad = False
 
         model = SFCNClassifier(
             output_dim=1,
-            emb_dim=cfg.encoder.emb_dim,
+            emb_dim=encoder.emb_dim,
             encoder=encoder,
             hidden_dim=cfg.classifier.hidden_dim,
         ).to(device)
@@ -275,7 +270,7 @@ def main(cfg):
 
         model = SFCNClassifier(
             output_dim=1,
-            emb_dim=cfg.encoder.emb_dim,
+            emb_dim=encoder.emb_dim,
             encoder=encoder,
             hidden_dim=cfg.classifier.hidden_dim,
         ).to(device)
@@ -283,7 +278,6 @@ def main(cfg):
 
         train_accs, train_losses, val_accs, val_losses, test_acc = regular_experiment(
             cfg=cfg,
-            run=run,
             train_dataloader=train_dataloader,
             val_dataloader=val_dataloader,
             test_dataloader=test_dataloader,

@@ -1,0 +1,33 @@
+
+wandb:
+  enabled: false
+  project: "barlow-twins-graph"
+  run_name: "baseline_adam_test"
+
+meta:
+  test: true
+  seed: 2136
+  num_workers: 4
+  save_model_freq: 1 # 0 means no saving
+  save_model_path: "models/barlow_twins_graph"
+  cache_path: null
+
+train:
+  epochs: 10
+  lr: 1e-3
+  lr_scheduler: true
+  batch_size: 256
+  lambd: 0.0051
+  weight_decay: 1e-6
+  lars: false
+  
+model:
+  emb_dim: 1024
+  norm_out: 'batch_norm' # ['none', 'sigmoid', 'batch_norm']
+
+gin_encoder:
+  hidden_channels: 2048
+  num_layers: 2
+  dropout: 0.5
+  emb_style: "concat" # []"none", "replace", "concat"]
+  norm: "batch" # []"batch", "layer", "graph", null]

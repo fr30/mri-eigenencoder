@@ -27,9 +27,11 @@ class CosDelayWithWarmupScheduler:
             end_lr = self.base_lr * 0.001
             lr = self.base_lr * q + end_lr * (1 - q)
 
-        # print(len(optimizer.param_groups))
         optimizer.param_groups[0]["lr"] = lr * self.lr_weights
-        # optimizer.param_groups[1]['lr'] = lr * self.lr_biases
+
+        if len(optimizer.param_groups) > 1:
+            optimizer.param_groups[1]["lr"] = lr * self.lr_biases
+
         self.step += 1
 
 

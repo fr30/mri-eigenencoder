@@ -50,9 +50,6 @@ class GINEncoder(nn.Module):
             self.norm_out = F.sigmoid
         else:
             self.norm_out = nn.Identity()
-        # self.linear = nn.Sequential(
-        #     nn.Linear(512, emb_dim),
-        # )
 
     def forward(self, batch_graph):
         if self.emb_style != "none":
@@ -64,12 +61,8 @@ class GINEncoder(nn.Module):
         x = self.gin(x, edge_index)
         x = self.norm_out(x)
         x = global_mean_pool(x, batch_graph.batch)
+
         return x
-        # x = self.gin(x, edge_index)
-        # x = x.reshape(batch_graph.batch_size, -1, x.shape[1])
-        # x = x.mean(dim=1)
-        # x = self.linear(x)
-        # return x
 
     def _add_emb(self, x, batch_size):
         nids = torch.arange(self.num_nodes).repeat(batch_size).to(x.device)
@@ -86,36 +79,27 @@ class GINEncoder(nn.Module):
 class GINClassifier(nn.Module):
     def __init__(
         self,
-        in_channels,
-        hidden_channels,
-        num_layers,
-        dropout,
-        norm=None,
-        emb_style="none",  # ['none, 'concat', 'replace']
-        num_nodes=None,
-        emb_dim=128,
+        encoder,
+        num_classes,
+        linear=False,
     ):
         super().__init__()
-        self.encoder = GINEncoder(
-            in_channels=in_channels,
-            hidden_channels=hidden_channels,
-            num_layers=num_layers,
-            dropout=dropout,
-            norm=norm,
-            emb_style=emb_style,
-            num_nodes=num_nodes,
-            emb_dim=emb_dim,
-        )
-        self.cls_head = nn.Sequential(
-            nn.Linear(emb_dim, emb_dim * 4),
-            nn.ReLU(),
-            nn.Linear(emb_dim * 4, emb_dim * 4),
-        )
+        self.encoder = encoder
+        if linear:
+            self.cls_head = nn.Linear(encoder.emb_dim, num_classes)
+        else:
+            self.cls_head = nn.Sequential(
+                nn.Linear(encoder.emb_dim, encoder.emb_dim * 4),
+                nn.ReLU(),
+                nn.Linear(encoder.emb_dim * 4, encoder.emb_dim * 4),
+                nn.ReLU(),
+                nn.Linear(encoder.emb_dim * 4, num_classes),
+            )
 
     def forward(self, x):
         x = self.encoder(x)
         x = self.cls_head(x)
-        return x
+        return x.squeeze()
 
 
 class GINEncoderWithProjector(nn.Module):
@@ -166,8 +150,44 @@ class GINEncoderWithProjector(nn.Module):
         x = self.encoder(x)
         x = self.projector(x)
         x = self.norm_out(x)
-        # Try replacing batchnorm with sigmoid
+
         return x
+
+
+class BarlowTwinsGIN(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        hidden_channels,
+        num_layers,
+        dropout,
+        norm=None,
+        emb_style="none",  # ['none, 'concat', 'replace']
+        num_nodes=None,
+        emb_dim=128,
+        norm_out="batch_norm",  # ['sigmoid', 'batch_norm', 'none']
+    ):
+        super().__init__()
+
+        self.model = GINEncoderWithProjector(
+            in_channels=in_channels,
+            hidden_channels=hidden_channels,
+            num_layers=num_layers,
+            dropout=dropout,
+            norm=norm,
+            emb_style=emb_style,
+            num_nodes=num_nodes,
+            emb_dim=emb_dim,
+            norm_out=norm_out,
+            enc_norm_out="none",
+        )
+
+    def forward(self, x1, x2):
+        return self.model(x1), self.model(x2)
+
+    @property
+    def encoder(self):
+        return self.model.encoder
 
 
 class SFCNEncoder(nn.Module):

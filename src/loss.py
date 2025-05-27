@@ -113,3 +113,33 @@ def fmcat_loss(fmri_f, smri_f):
     tsd = -torch.trace(lhs @ rhs)
 
     return tsd, tsd2.detach()
+
+
+class BTLoss:
+    def __init__(self, batch_size, accelerator=None, lambd=0.0051):
+        self.batch_size = batch_size
+        self.accelerator = accelerator
+        self.lambd = lambd
+
+    def __call__(self, z1, z2):
+        c = z1.T @ z2
+
+        if self.accelerator is not None:
+            c = self.accelerator.reduce(c)
+
+        c /= self.batch_size
+        on_diag = (1 - torch.diagonal(c)).pow(2).sum()
+        off_diag = c[~torch.eye(c.shape[0], dtype=bool)].pow(2).sum()
+        loss = on_diag + self.lambd * off_diag
+
+        return loss
+
+    @staticmethod
+    def off_diagonal(x):
+        # return a flattened view of the off-diagonal elements of a square matrix
+        n, m = x.shape
+        assert n == m
+        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+    # c.div_(self.args.batch_size)
+    # torch.distributed.all_reduce(c)
