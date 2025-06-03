@@ -1,6 +1,6 @@
 
 wandb:
-  enabled: false
+  enabled: true
   project: "barlow-twins-graph"
   run_name: "baseline_adam_test"
 
@@ -13,7 +13,7 @@ meta:
   cache_path: null
 
 train:
-  epochs: 10
+  epochs: 20
   lr: 1e-3
   lr_scheduler: true
   batch_size: 256

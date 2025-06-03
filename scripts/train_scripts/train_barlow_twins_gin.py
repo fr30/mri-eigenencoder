@@ -2,12 +2,13 @@ import hydra
 import time
 import torch
 import os
+import torch.utils
 import wandb
 import warnings
 
 from accelerate import Accelerator
 from src.model import BarlowTwinsGIN
-from src.dataset import RESTfMRIDataset, BTDataLoader
+from src.dataset import RESTfMRIDataset, BTDataLoader, ABIDEfMRIDataset
 from src.loss import BTLoss
 from src.optim import LARS
 from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
@@ -67,7 +68,7 @@ def test_epoch(data_loader, criterion, model, device):
     return cum_loss
 
 
-@hydra.main(version_base=None, config_path="configs", config_name="barlow_twins_graph")
+@hydra.main(version_base=None, config_path="configs", config_name="barlow_twins_gin")
 def main(cfg):
     if cfg.wandb.enabled:
         run = wandb.init(
@@ -87,8 +88,15 @@ def main(cfg):
     else:
         device = torch.device("cpu")
 
-    train_dataset = RESTfMRIDataset(split="train", cache_path=cfg.meta.cache_path)
-    val_dataset = RESTfMRIDataset(split="dev", cache_path=cfg.meta.cache_path)
+    rest_train_dataset = RESTfMRIDataset(split="train", cache_path=cfg.meta.cache_path)
+    rest_val_dataset = RESTfMRIDataset(split="dev")
+    abide_train_dataset = ABIDEfMRIDataset(split="full")
+    # abide_val_dataset = ABIDEfMRIDataset(split="dev")
+
+    train_dataset = torch.utils.data.ConcatDataset(
+        [rest_train_dataset, abide_train_dataset]
+    )
+    val_dataset = torch.utils.data.ConcatDataset([rest_val_dataset])
 
     train_dataloader = BTDataLoader(
         train_dataset,
@@ -107,13 +115,13 @@ def main(cfg):
     )
 
     model = BarlowTwinsGIN(
-        in_channels=train_dataset.num_nodes,
+        in_channels=rest_train_dataset.num_nodes,
         hidden_channels=cfg.gin_encoder.hidden_channels,
         num_layers=cfg.gin_encoder.num_layers,
         dropout=cfg.gin_encoder.dropout,
         norm=cfg.gin_encoder.norm,
         emb_style=cfg.gin_encoder.emb_style,
-        num_nodes=train_dataset.num_nodes,
+        num_nodes=rest_train_dataset.num_nodes,
         emb_dim=cfg.model.emb_dim,
         norm_out=cfg.model.norm_out,
     ).to(device)

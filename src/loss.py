@@ -1,17 +1,35 @@
 import torch
 
 
-# def fmcat_loss(fmri_f, smri_f):
-#     eps = torch.eye(fmri_f.shape[1], device=fmri_f.device) * 1e-5
-#     RF = (fmri_f.T @ fmri_f) / fmri_f.shape[0] + eps
-#     RG = (smri_f.T @ smri_f) / smri_f.shape[0] + eps
-#     P = (fmri_f.T @ smri_f) / smri_f.shape[0]
+class HFMCALoss:
+    def __init__(self, device):
+        self.device = device
 
-#     lhs = torch.linalg.lstsq(RF, P).solution
-#     rhs = torch.linalg.lstsq(RG, P.T).solution
-#     tsd = -torch.trace(lhs @ rhs)
+    def __call__(self, y, y_dash):
+        g_patches = y.unsqueeze(3).unsqueeze(2).unsqueeze(2)
+        f_proj = y_dash.unsqueeze(2).unsqueeze(2)
 
-#     return tsd, torch.tensor(0)
+        f1 = torch.flatten(f_proj.permute(0, 2, 3, 1), 0, -2)
+        f2 = g_patches.permute(0, 2, 3, 4, 5, 1).flatten(0, -2)
+        f3 = torch.flatten(g_patches.mean(dim=(-1, -2)).permute(0, 2, 3, 1), 0, -2)
+        input_dim, output_dim = f_proj.shape[1], g_patches.shape[1]
+
+        P = f1.T @ f3 / f1.shape[0]
+        RF = f1.T @ f1 / f1.shape[0]
+        RG = f2.T @ f2 / f2.shape[0]
+        RFG = torch.zeros((input_dim + output_dim, input_dim + output_dim)).to(
+            self.device
+        )
+        RFG[:input_dim, :input_dim] = RF
+        RFG[input_dim:, input_dim:] = RG
+        RFG[:input_dim, input_dim:] = P
+        RFG[input_dim:, :input_dim] = P.T
+
+        RFG = RFG + torch.eye((RFG.shape[0])).to(self.device) * 1e-1
+        RF = RF + torch.eye((RF.shape[0])).to(self.device) * 1e-1
+        RG = RG + torch.eye((RG.shape[0])).to(self.device) * 1e-1
+
+        return torch.logdet(RFG) - torch.logdet(RF) - torch.logdet(RG)
 
 
 class MCALoss:
@@ -143,3 +161,16 @@ class BTLoss:
 
     # c.div_(self.args.batch_size)
     # torch.distributed.all_reduce(c)
+
+
+# def fmcat_loss(fmri_f, smri_f):
+#     eps = torch.eye(fmri_f.shape[1], device=fmri_f.device) * 1e-5
+#     RF = (fmri_f.T @ fmri_f) / fmri_f.shape[0] + eps
+#     RG = (smri_f.T @ smri_f) / smri_f.shape[0] + eps
+#     P = (fmri_f.T @ smri_f) / smri_f.shape[0]
+
+#     lhs = torch.linalg.lstsq(RF, P).solution
+#     rhs = torch.linalg.lstsq(RG, P.T).solution
+#     tsd = -torch.trace(lhs @ rhs)
+
+#     return tsd, torch.tensor(0)

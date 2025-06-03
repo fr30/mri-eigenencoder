@@ -3,6 +3,7 @@ import nibabel as nib
 import numpy as np
 import os
 import pandas as pd
+import scipy.io as scio
 import torch
 
 from torch_geometric.utils import dense_to_sparse
@@ -31,9 +32,9 @@ NP_TO_TORCH_DTYPES = {
 class RESTfMRIDataset(Dataset):
     def __init__(
         self,
-        data_dir="./REST-meta-MDD/fMRI/AAL",
-        metadata_path="./REST-meta-MDD/metadata.csv",
-        split="full",
+        data_dir="./Data/REST-meta-MDD/fMRI/AAL",
+        metadata_path="./Data/REST-meta-MDD/metadata.csv",
+        split="full",  # Options: 'train', 'dev', 'test', 'full'
         cache_path=None,
     ):
         super().__init__()
@@ -121,7 +122,7 @@ class RESTfMRIDataset(Dataset):
             corr = self._create_corr(raw_signals)
 
             # Transform correlation matrix to adjacency matrix
-            node_features = torch.from_numpy(corr, dtype=torch.float32)
+            node_features = torch.from_numpy(corr).to(torch.float32)
             topk = node_features.reshape(-1)
             topk, _ = torch.sort(abs(topk), dim=0, descending=True)
             threshold = topk[int(node_features.shape[0] ** 2 / 20 * 2)]
@@ -166,6 +167,77 @@ class RESTfMRIDataset(Dataset):
         return edge_indices, node_features
 
 
+class ABIDEfMRIDataset(Dataset):
+    def __init__(
+        self,
+        data_dir="./Data/ABIDE",
+        split="full",  # Options: 'train', 'dev', 'test', 'full'
+    ):
+        # Data is available at google drive (https://drive.google.com/drive/folders/1EkvBOoXF0MB2Kva9l4GQbuWX25Yp81a8?usp=sharing).
+        super().__init__()
+        self.dataset = self.prepare_data(data_dir, split)
+
+    def prepare_data(self, data_dir, split):
+        data_path = os.path.join(data_dir, "md_AAL_0.4.mat")
+        data = scio.loadmat(data_path)
+        # graph_struct = data["graph_struct"][0]
+        label = data["label"]
+
+        train, test = train_test_split(
+            pd.DataFrame(label), test_size=0.2, random_state=42, stratify=label
+        )
+        dev, test = train_test_split(
+            pd.DataFrame(label[test.index]),
+            test_size=0.5,
+            random_state=42,
+            stratify=label[test.index],
+        )
+
+        dataset = []
+
+        for graph_index in range(len(data["label"])):
+            graph_struct = data["graph_struct"][0]
+            edge = torch.Tensor(graph_struct[graph_index]["edge"])
+            ROI = torch.Tensor(graph_struct[graph_index]["ROI"])
+
+            y = torch.Tensor(label[graph_index])
+            A = torch.sparse_coo_tensor(
+                indices=edge[:, :2].t().long(),
+                values=edge[:, -1]
+                .reshape(
+                    -1,
+                )
+                .float(),
+                size=(116, 116),
+            )
+            G = (A.t() + A).coalesce()
+
+            graph = Data(
+                x=ROI.reshape(-1, 116).float(),
+                edge_index=G.indices().reshape(2, -1).long(),
+                edge_attr=G.values().reshape(-1, 1).float(),
+                y=y.long(),
+            )
+            dataset.append(graph)
+
+        if split == "train":
+            return [dataset[i] for i in train.index]
+        elif split == "dev":
+            return [dataset[i] for i in dev.index]
+        elif split == "test":
+            return [dataset[i] for i in test.index]
+        elif split == "full":
+            return dataset
+        else:
+            raise ValueError("Invalid split. Use 'train', 'dev', 'test' or 'full'.")
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        return self.dataset[idx]
+
+
 class RESTsMRIDataset(Dataset):
     IMAGE_TYPES = [
         "c1",  # Gray matter density in native space
@@ -181,8 +253,8 @@ class RESTsMRIDataset(Dataset):
 
     def __init__(
         self,
-        data_dir="./REST-meta-MDD/REST-meta-MDD-VBM-Phase1-Sharing",
-        metadata_path="./REST-meta-MDD/metadata.csv",
+        data_dir="./Data/REST-meta-MDD/REST-meta-MDD-VBM-Phase1-Sharing",
+        metadata_path="./Data/REST-meta-MDD/metadata.csv",
         imgtypes=[
             "wc1"
         ],  # Can be any combination of allowed imgtypes (["wc1", "mwc1"...])
@@ -287,7 +359,7 @@ class RESTsMRIDataset(Dataset):
     def _lazy_load_data(self, idx):
         filename = self.ids[idx]
         data = np.load(os.path.join(self.cache_path, f"{filename}.npy"))
-        data_t = torch.from_numpy(data, dtype=NP_TO_TORCH_DTYPES[self.dtype])
+        data_t = torch.from_numpy(data).to(NP_TO_TORCH_DTYPES[self.dtype])
         return data_t, self.labels[idx]
 
     def _inmemory_load_data(self, idx):
@@ -325,9 +397,9 @@ class RESTsMRIDataset(Dataset):
 class RESTJointDataset(Dataset):
     def __init__(
         self,
-        fmri_data_dir="./REST-meta-MDD/fMRI/AAL",
-        smri_data_dir="./REST-meta-MDD/REST-meta-MDD-VBM-Phase1-Sharing",
-        metadata_path="./REST-meta-MDD/metadata.csv",
+        fmri_data_dir="./Data/REST-meta-MDD/fMRI/AAL",
+        smri_data_dir="./Data/REST-meta-MDD/REST-meta-MDD-VBM-Phase1-Sharing",
+        metadata_path="./Data/REST-meta-MDD/metadata.csv",
         imgtypes=[
             "wc1"
         ],  # Can be any combination of allowed imgtypes (["wc1", "mwc1"...])
@@ -447,6 +519,45 @@ class BTDataLoader(torch.utils.data.DataLoader):
         x2_batch = Batch.from_data_list(x2)
         # x1_batch, x2_batch = Batch.from_data_list(x), Batch.from_data_list(x)
         return x1_batch, x2_batch
+
+    def _construct_aug(self):
+        return A.RandomChoice(
+            [
+                A.RWSampling(num_seeds=1000, walk_length=10),
+                A.NodeDropping(pn=0.1),
+                A.FeatureMasking(pf=0.1),
+                # A.EdgeAdding(pe=0.1),
+                A.EdgeRemoving(pe=0.1),
+            ],
+            num_choices=1,
+        )
+
+
+class HFMCADataLoader(torch.utils.data.DataLoader):
+    def __init__(
+        self,
+        dataset,
+        num_views,
+        batch_size=1,
+        shuffle=False,
+        **kwargs,
+    ):
+        kwargs.pop("collate_fn", None)
+        super().__init__(
+            dataset, batch_size, shuffle, collate_fn=self._batch_data, **kwargs
+        )
+        self.augs = [self._construct_aug() for _ in range(num_views)]
+
+    def _batch_data(self, x):
+        views = []
+
+        for aug in self.augs:
+            for d in x:
+                views.append(Data(*aug(d.x, d.edge_index)))
+
+        views = Batch.from_data_list(views)
+
+        return views
 
     def _construct_aug(self):
         return A.RandomChoice(

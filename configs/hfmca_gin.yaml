@@ -1,0 +1,34 @@
+
+wandb:
+  enabled: true
+  project: "hfmca-gin"
+  run_name: "baseline_fulldata"
+
+meta:
+  test: true
+  seed: 2136
+  num_workers: 4
+  save_model_freq: 0 # 0 means no saving
+  save_model_path: "models/hfmca_gin"
+  cache_path: null
+
+train:
+  epochs: 100
+  lr: 1e-3
+  lr_scheduler: true
+  batch_size: 64
+  lambd: 0.0051
+  weight_decay: 1e-6
+  lars: false
+  num_views: 9
+  
+model:
+  emb_dim: 512
+  norm_out: 'batch_norm' # ['none', 'sigmoid', 'batch_norm']
+
+gin_encoder:
+  hidden_channels: 1024
+  num_layers: 2
+  dropout: 0.5
+  emb_style: "concat" # []"none", "replace", "concat"]
+  norm: "batch" # []"batch", "layer", "graph", null]

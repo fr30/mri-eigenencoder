@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch_geometric.nn.models import GIN
 from torch_geometric.nn.pool import global_mean_pool
+from torch_geometric.data import Batch
 
 
 class GINEncoder(nn.Module):
@@ -76,7 +77,7 @@ class GINEncoder(nn.Module):
         return x
 
 
-class GINClassifier(nn.Module):
+class Classifier(nn.Module):
     def __init__(
         self,
         encoder,
@@ -113,8 +114,8 @@ class GINEncoderWithProjector(nn.Module):
         emb_style="none",  # ['none, 'concat', 'replace']
         num_nodes=None,
         emb_dim=128,
-        norm_out="batch_norm",  # ['sigmoid', 'batch_norm', 'none']
-        enc_norm_out="sigmoid",  # ['sigmoid', 'batch_norm', 'none']
+        norm_out="batch",  # ['sigmoid', 'batch', 'none']
+        enc_norm_out="sigmoid",  # ['sigmoid', 'batch', 'none']
     ):
         super().__init__()
         self.encoder = GINEncoder(
@@ -128,6 +129,7 @@ class GINEncoderWithProjector(nn.Module):
             emb_dim=emb_dim,
             norm_out=enc_norm_out,
         )
+
         self.projector = nn.Sequential(
             nn.Linear(emb_dim, emb_dim * 4),
             nn.BatchNorm1d(emb_dim * 4),
@@ -139,7 +141,7 @@ class GINEncoderWithProjector(nn.Module):
             nn.BatchNorm1d(emb_dim * 4),
             nn.ReLU(),
         )
-        if norm_out == "batch_norm":
+        if norm_out == "batch":
             self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
         elif norm_out == "sigmoid":
             self.norm_out = F.sigmoid
@@ -165,7 +167,7 @@ class BarlowTwinsGIN(nn.Module):
         emb_style="none",  # ['none, 'concat', 'replace']
         num_nodes=None,
         emb_dim=128,
-        norm_out="batch_norm",  # ['sigmoid', 'batch_norm', 'none']
+        norm_out="batch",  # ['sigmoid', 'batch', 'none']
     ):
         super().__init__()
 
@@ -195,7 +197,7 @@ class SFCNEncoder(nn.Module):
         self,
         channel_number=[28, 58, 128, 256, 512],
         emb_dim=128,
-        norm_out="sigmoid",  # ['sigmoid', 'batch_norm', 'none']
+        norm_out="sigmoid",  # ['sigmoid', 'batch', 'none']
     ):
         super().__init__()
         self.emb_dim = emb_dim
@@ -227,7 +229,7 @@ class SFCNEncoder(nn.Module):
         # Change to self.linear = nn.Linear(...) when training next series of checkpoints
         self.linear = nn.Sequential(nn.Linear(channel_number[-1], emb_dim))
 
-        if norm_out == "batch_norm":
+        if norm_out == "batch":
             self.norm_out = nn.BatchNorm1d(emb_dim, affine=False)
         elif norm_out == "sigmoid":
             self.norm_out = F.sigmoid
@@ -329,7 +331,7 @@ class SFCNEncoderWithProjector(nn.Module):
         self,
         channel_number=[28, 58, 128, 256, 512],
         emb_dim=128,
-        norm_out="batch_norm",  # ['sigmoid', 'batch_norm', 'none']
+        norm_out="batch",  # ['sigmoid', 'batch', 'none']
         enc_norm_out="sigmoid",  # ['sigmoid', 'batch_norm', 'none']
     ):
         super().__init__()
@@ -363,3 +365,91 @@ class SFCNEncoderWithProjector(nn.Module):
         # Add some noise to input
         # Run for fewer epochs
         return x
+
+
+class SimpleCNN(nn.Module):
+    def __init__(self, in_channels=64, HIDDEN=200, out_channels=64, sample_time=2):
+        super(SimpleCNN, self).__init__()
+
+        self.cnn_list = []
+        self.bn_list = []
+
+        self.dim = out_channels
+
+        self.cnn_list.append(
+            nn.Conv1d(
+                in_channels, HIDDEN, kernel_size=1, stride=1, padding=0, bias=True
+            )
+        )
+        self.bn_list.append(nn.BatchNorm1d(HIDDEN))
+
+        self.cnn_list.append(
+            nn.Conv1d(
+                HIDDEN, HIDDEN, kernel_size=sample_time, stride=1, padding=0, bias=True
+            )
+        )
+        self.bn_list.append(nn.BatchNorm1d(HIDDEN))
+
+        self.cnn_list = nn.ModuleList(self.cnn_list)
+        self.bn_list = nn.ModuleList(self.bn_list)
+
+        self.cnn_final = nn.Conv1d(
+            HIDDEN, out_channels, kernel_size=1, stride=1, padding=0, bias=True
+        )
+
+    def forward(self, x):
+
+        for i in range(0, len(self.cnn_list)):
+            x = self.cnn_list[i](x)
+            x = torch.relu(x)
+            x = self.bn_list[i](x)
+
+        x = self.cnn_final(x)
+        x = torch.sigmoid(x)
+
+        return x
+
+
+class HFMCAGIN(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        hidden_channels,
+        num_layers,
+        dropout,
+        nviews,
+        norm=None,
+        emb_style="none",  # ['none, 'concat', 'replace']
+        num_nodes=None,
+        emb_dim=128,
+    ):
+        super().__init__()
+        self.backbone = GINEncoderWithProjector(
+            in_channels=in_channels,
+            hidden_channels=hidden_channels,
+            num_layers=num_layers,
+            emb_dim=emb_dim,
+            dropout=dropout,
+            norm=norm,
+            emb_style=emb_style,
+            num_nodes=num_nodes,
+            norm_out="sigmoid",
+            enc_norm_out="sigmoid",
+        )
+        self.final_net = SimpleCNN(4 * emb_dim, 4 * emb_dim, emb_dim, nviews)
+        self.nviews = nviews
+
+    def forward(self, x):
+        bsize = x.batch_size // self.nviews
+        y = self.backbone(x)
+        y = y.squeeze(-1).squeeze(-1)
+        y = torch.stack([y[bsize * k : bsize * (k + 1)] for k in range(0, self.nviews)])
+        y = y.permute(1, 2, 0)
+
+        y_dash = self.final_net(y).squeeze(-1)
+
+        return y, y_dash
+
+    @property
+    def encoder(self):
+        return self.backbone.encoder

@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import wandb
 
-from src.model import GINEncoder, GINClassifier
+from src.model import GINEncoder, Classifier
 from src.dataset import RESTfMRIDataset
 from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
 from torch_geometric.loader import DataLoader
@@ -108,7 +108,7 @@ def main(cfg):
             torch.load(cfg.encoder.checkpoint_path, weights_only=True)
         )
 
-    model = GINClassifier(
+    model = Classifier(
         encoder=encoder,
         num_classes=1,
         linear=cfg.classifier.linear,

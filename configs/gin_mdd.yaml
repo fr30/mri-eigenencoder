@@ -1,11 +1,11 @@
 wandb:
-  run_name: "pretrain_linear_1024_freeze"
+  run_name: "pretrain_1024_nofreeze_extradata"
   enabled: true
   project: "gin-mdd"
 
 meta:
   test: true
-  seed: 2133
+  seed: 2132
 
 train:
   epochs: 150
@@ -14,7 +14,7 @@ train:
   batch_size: 256
 
 classifier:
-  linear: true
+  linear: false
 
 encoder:
   emb_dim: 1024
@@ -23,6 +23,6 @@ encoder:
   dropout: 0.5
   emb_style: "concat" # []"none", "replace", "concat"]
   norm: "batch" # []"batch", "layer", "graph", null]
-  checkpoint_path: "models/barlow_twins_graph/fmri_enc_ep8.pt" # Can be null
+  checkpoint_path: "models/barlow_twins_graph/fmri_enc_ep10.pt" # Can be null
   # checkpoint_path: null
-  freeze: true
+  freeze: false
