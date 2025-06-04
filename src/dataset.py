@@ -252,7 +252,7 @@ class COBREfMRIDataset(Dataset):
             node_features, edge_index = corr_to_graph(corr)
             graph = Data(
                 x=torch.tensor(node_features, dtype=torch.float),
-                edge_index=torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
+                edge_index=torch.tensor(edge_index, dtype=torch.long),
             )
             dataset.append(graph)
 
@@ -428,21 +428,6 @@ class RESTsMRIDataset(Dataset):
         filepath = os.path.join(data_dir, imgtype, f"{subid}.nii.gz")
         image_shape = nib.load(filepath).get_fdata().shape
         return (len(self.ids), len(imgtypes), *image_shape)
-
-
-# class RESTsMRIDinoDataset(RESTsMRIDataset):
-#     def __getitem__(self, idx):
-#         x, y = self.load_data_fn(idx)
-#         x = x.unbind(dim=-1)
-#         x = torch.concat(x, dim=-1)
-#         x = x.unbind(dim=0)
-#         x = torch.concat(x, dim=-1)
-#         h, w = x.shape
-#         print(x.shape)
-#         x = x[: h // 14 * 14, : w // 14 * 14]
-#         x = x.unsqueeze(0).expand(3, -1, -1)
-
-#         return x, y
 
 
 class RESTJointDataset(Dataset):
