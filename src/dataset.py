@@ -6,7 +6,7 @@ import pandas as pd
 import scipy.io as scio
 import torch
 
-from torch_geometric.utils import dense_to_sparse
+from src.utils import create_corr, corr_to_graph
 from torch_geometric.data import Data, Batch
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
@@ -92,20 +92,9 @@ class RESTfMRIDataset(Dataset):
             y=self.labels[idx],
         )
 
-    def _create_corr(self, data):
-        eps = 1e-16
-        R = np.corrcoef(data)
-        R[np.isnan(R)] = 0
-        R = R - np.diag(np.diag(R))
-        R[R >= 1] = 1 - eps
-        corr = 0.5 * np.log((1 + R) / (1 - R))
-        return corr
-
     def _create_cache(self, data_dir):
         if not os.path.exists(self.cache_path):
             os.makedirs(self.cache_path)
-
-        num_edges = None
 
         for subid in self.ids:
             edge_index_path = os.path.join(self.cache_path, f"{subid}_edge_index.npy")
@@ -116,23 +105,10 @@ class RESTfMRIDataset(Dataset):
             if os.path.exists(edge_index_path) and os.path.exists(node_features_path):
                 continue
 
-            # Read the raw signals and create correlation matrix
             filepath = os.path.join(data_dir, f"{subid}.npy")
             raw_signals = np.load(filepath)
-            corr = self._create_corr(raw_signals)
-
-            # Transform correlation matrix to adjacency matrix
-            node_features = torch.from_numpy(corr).to(torch.float32)
-            topk = node_features.reshape(-1)
-            topk, _ = torch.sort(abs(topk), dim=0, descending=True)
-            threshold = topk[int(node_features.shape[0] ** 2 / 20 * 2)]
-            adj = (torch.abs(node_features) >= threshold).to(int)
-            edge_index = dense_to_sparse(adj)[0]
-
-            if num_edges is None:
-                num_edges = edge_index.shape[1]
-
-            edge_index = edge_index[:, :num_edges]
+            corr = create_corr(raw_signals)
+            node_features, edge_index = corr_to_graph(corr)
 
             np.save(edge_index_path, edge_index)
             np.save(node_features_path, node_features)
@@ -230,6 +206,81 @@ class ABIDEfMRIDataset(Dataset):
             return dataset
         else:
             raise ValueError("Invalid split. Use 'train', 'dev', 'test' or 'full'.")
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        return self.dataset[idx]
+
+
+class COBREfMRIDataset(Dataset):
+    FILE_STRUCTURES = {
+        "UCLA_COBRE_ALL116.mat": ["UCLA_HC", "UCLA_SZ"],
+        "COBRE_HC_SZ_AAL116_Updated.mat": [
+            "COBRE_1_SC_NS_",
+            "COBRE_2_SC_S_",
+            "COBRE_3_HC_NS_",
+            "COBRE_4_HC_S_",
+        ],
+    }
+
+    def __init__(
+        self,
+        data_dir="./Data/COBRE",
+        split="full",  # Options: 'train', 'dev', 'test', 'full'
+    ):
+        super().__init__()
+        self.dataset = self.prepare_data(data_dir, split)
+
+    def prepare_data(self, data_dir, split):
+        data, sites = self._preprocess_raw_signal(data_dir)
+        train, test = train_test_split(
+            pd.DataFrame(sites), test_size=0.2, random_state=42, stratify=sites
+        )
+        dev, test = train_test_split(
+            pd.DataFrame(sites[test.index]),
+            test_size=0.5,
+            random_state=42,
+            stratify=sites[test.index],
+        )
+
+        dataset = []
+
+        for signal in data:
+            corr = create_corr(signal)
+            node_features, edge_index = corr_to_graph(corr)
+            graph = Data(
+                x=torch.tensor(node_features, dtype=torch.float),
+                edge_index=torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
+            )
+            dataset.append(graph)
+
+        if split == "train":
+            return [dataset[i] for i in train.index]
+        elif split == "dev":
+            return [dataset[i] for i in dev.index]
+        elif split == "test":
+            return [dataset[i] for i in test.index]
+        elif split == "full":
+            return dataset
+        else:
+            raise ValueError("Invalid split. Use 'train', 'dev', 'test' or 'full'.")
+
+    def _preprocess_raw_signal(self, data_dir):
+        corr_matrices = []
+        sites = []
+
+        for file_name, sub in self.FILE_STRUCTURES.items():
+            data_path = os.path.join(data_dir, file_name)
+            data = scio.loadmat(data_path)
+            for s in sub:
+                for signal in data[s]:
+                    corr_matrix = create_corr(signal[0])
+                    corr_matrices.append(corr_matrix)
+                    sites.append(s)
+
+        return np.array(corr_matrices), np.array(sites)
 
     def __len__(self):
         return len(self.dataset)

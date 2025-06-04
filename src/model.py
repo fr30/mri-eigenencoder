@@ -433,8 +433,8 @@ class HFMCAGIN(nn.Module):
             norm=norm,
             emb_style=emb_style,
             num_nodes=num_nodes,
-            norm_out="sigmoid",
-            enc_norm_out="sigmoid",
+            norm_out="batch",
+            enc_norm_out="batch",
         )
         self.final_net = SimpleCNN(4 * emb_dim, 4 * emb_dim, emb_dim, nviews)
         self.nviews = nviews

@@ -3,6 +3,7 @@ import numpy as np
 import torch
 
 from scipy.ndimage.interpolation import affine_transform
+from torch_geometric.utils import dense_to_sparse
 
 
 class CosDelayWithWarmupScheduler:
@@ -221,3 +222,29 @@ def aug_batch(Xb):
         newXb[i] = multi_result[i][0]
 
     return newXb
+
+
+def create_corr(data):
+    eps = 1e-16
+    R = np.corrcoef(data)
+    R[np.isnan(R)] = 0
+    R = R - np.diag(np.diag(R))
+    R[R >= 1] = 1 - eps
+    corr = 0.5 * np.log((1 + R) / (1 - R))
+    return corr
+
+
+def corr_to_graph(corr):
+    node_features = torch.from_numpy(corr).to(torch.float32)
+    topk = node_features.reshape(-1)
+    topk, _ = torch.sort(abs(topk), dim=0, descending=True)
+    threshold = topk[int(node_features.shape[0] ** 2 / 20 * 2)]
+    adj = (torch.abs(node_features) >= threshold).to(int)
+    edge_index = dense_to_sparse(adj)[0]
+
+    # if num_edges is None:
+    #     num_edges = edge_index.shape[1]
+
+    # edge_index = edge_index[:, :num_edges]
+
+    return node_features, edge_index

@@ -7,7 +7,12 @@ import warnings
 
 from accelerate import Accelerator
 from src.model import HFMCAGIN
-from src.dataset import RESTfMRIDataset, HFMCADataLoader, ABIDEfMRIDataset
+from src.dataset import (
+    RESTfMRIDataset,
+    HFMCADataLoader,
+    ABIDEfMRIDataset,
+    COBREfMRIDataset,
+)
 from src.loss import HFMCALoss
 from src.optim import LARS
 from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
@@ -83,16 +88,13 @@ def main(cfg):
     else:
         device = torch.device("cpu")
 
-    # train_dataset = RESTfMRIDataset(split="train", cache_path=cfg.meta.cache_path)
-    # val_dataset = RESTfMRIDataset(split="dev", cache_path=cfg.meta.cache_path)
-
     rest_train_dataset = RESTfMRIDataset(split="train", cache_path=cfg.meta.cache_path)
     rest_val_dataset = RESTfMRIDataset(split="dev")
-    abide_train_dataset = ABIDEfMRIDataset(split="full")
-    # abide_val_dataset = ABIDEfMRIDataset(split="dev")
+    abide_dataset = ABIDEfMRIDataset(split="full")
+    cobre_dataset = COBREfMRIDataset(split="full")
 
     train_dataset = torch.utils.data.ConcatDataset(
-        [rest_train_dataset, abide_train_dataset]
+        [rest_train_dataset, abide_dataset, cobre_dataset]
     )
     val_dataset = torch.utils.data.ConcatDataset([rest_val_dataset])
 
@@ -116,14 +118,14 @@ def main(cfg):
 
     model = HFMCAGIN(
         in_channels=rest_train_dataset.num_nodes,
-        hidden_channels=cfg.gin_encoder.hidden_channels,
-        num_layers=cfg.gin_encoder.num_layers,
-        dropout=cfg.gin_encoder.dropout,
+        hidden_channels=cfg.encoder.hidden_channels,
+        num_layers=cfg.encoder.num_layers,
+        dropout=cfg.encoder.dropout,
         nviews=cfg.train.num_views,
-        norm=cfg.gin_encoder.norm,
-        emb_style=cfg.gin_encoder.emb_style,
+        norm=cfg.encoder.norm,
+        emb_style=cfg.encoder.emb_style,
         num_nodes=rest_train_dataset.num_nodes,
-        emb_dim=cfg.model.emb_dim,
+        emb_dim=cfg.encoder.emb_dim,
     ).to(device)
 
     if cfg.train.lars:
@@ -160,7 +162,13 @@ def main(cfg):
         if not os.path.exists(cfg.meta.save_model_path):
             os.makedirs(cfg.meta.save_model_path)
 
-    for epoch in range(1, cfg.train.epochs + 1):
+    for epoch in range(0, cfg.train.epochs):
+        if cfg.meta.save_model_freq > 0 and epoch % cfg.meta.save_model_freq == 0:
+            torch.save(
+                model.encoder.state_dict(),
+                f"{cfg.meta.save_model_path}/fmri_enc_ep{epoch}.pt",
+            )
+
         start = time.time()
         train_loss = train_epoch(
             train_dataloader,
@@ -182,12 +190,6 @@ def main(cfg):
         print(
             f"Epoch: {epoch}\nTrain loss: {train_loss:.4f} Val loss: {val_loss:.4f}, Time: {epoch_time:.2f}s"
         )
-
-        if cfg.meta.save_model_freq > 0 and epoch % cfg.meta.save_model_freq == 0:
-            torch.save(
-                model.encoder.state_dict(),
-                f"{cfg.meta.save_model_path}/fmri_enc_ep{epoch}.pt",
-            )
 
 
 if __name__ == "__main__":
