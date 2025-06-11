@@ -11,7 +11,7 @@ from src.dataset import (
     RESTfMRIDataset,
     HFMCADataLoader,
     ABIDEfMRIDataset,
-    COBREfMRIDataset,
+    HCPfMRIDataset,
 )
 from src.loss import HFMCALoss
 from src.optim import LARS
@@ -91,10 +91,10 @@ def main(cfg):
     rest_train_dataset = RESTfMRIDataset(split="train", cache_path=cfg.meta.cache_path)
     rest_val_dataset = RESTfMRIDataset(split="dev")
     abide_dataset = ABIDEfMRIDataset(split="full")
-    cobre_dataset = COBREfMRIDataset(split="full")
+    hcp_dataset = HCPfMRIDataset(split="full")
 
     train_dataset = torch.utils.data.ConcatDataset(
-        [rest_train_dataset, abide_dataset, cobre_dataset]
+        [rest_train_dataset, abide_dataset, hcp_dataset]
     )
     val_dataset = torch.utils.data.ConcatDataset([rest_val_dataset])
 
@@ -162,7 +162,7 @@ def main(cfg):
         if not os.path.exists(cfg.meta.save_model_path):
             os.makedirs(cfg.meta.save_model_path)
 
-    for epoch in range(0, cfg.train.epochs):
+    for epoch in range(0, cfg.train.epochs + 1):
         if cfg.meta.save_model_freq > 0 and epoch % cfg.meta.save_model_freq == 0:
             torch.save(
                 model.encoder.state_dict(),

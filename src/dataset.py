@@ -289,6 +289,38 @@ class COBREfMRIDataset(Dataset):
         return self.dataset[idx]
 
 
+class HCPfMRIDataset(Dataset):
+    def __init__(self, data_dir="./Data/HCP1200/", split="full"):
+        super().__init__()
+        self.dataset = self.prepare_data(data_dir, split)
+
+    def __getitem__(self, idx):
+        return self.dataset[idx]
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def prepare_data(self, data_dir, split):
+        dataset = []
+
+        for file_name in os.listdir(os.path.join(data_dir, "AAL116")):
+            if file_name.endswith(".npy"):
+                conn_matrix = np.load(os.path.join(data_dir, file_name))
+                node_features, edge_index = corr_to_graph(conn_matrix)
+                graph = Data(
+                    x=torch.tensor(node_features, dtype=torch.float),
+                    edge_index=torch.tensor(edge_index, dtype=torch.long),
+                )
+                dataset.append(graph)
+
+        if split == "full":
+            return dataset
+        else:
+            raise ValueError(
+                "Invalid split. Use 'full' for HCP dataset as it does not have train/dev/test splits."
+            )
+
+
 class RESTsMRIDataset(Dataset):
     IMAGE_TYPES = [
         "c1",  # Gray matter density in native space
