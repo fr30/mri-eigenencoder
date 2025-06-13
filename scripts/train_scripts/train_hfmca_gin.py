@@ -11,7 +11,7 @@ from src.dataset import (
     RESTfMRIDataset,
     HFMCADataLoader,
     ABIDEfMRIDataset,
-    HCPfMRIDataset,
+    AOMICfMRIDataset,
 )
 from src.loss import HFMCALoss
 from src.optim import LARS
@@ -91,10 +91,11 @@ def main(cfg):
     rest_train_dataset = RESTfMRIDataset(split="train", cache_path=cfg.meta.cache_path)
     rest_val_dataset = RESTfMRIDataset(split="dev")
     abide_dataset = ABIDEfMRIDataset(split="full")
-    hcp_dataset = HCPfMRIDataset(split="full")
+    aomic_dataset = AOMICfMRIDataset(split="full")
+    # hcp_dataset = HCPfMRIDataset(split="full")
 
     train_dataset = torch.utils.data.ConcatDataset(
-        [rest_train_dataset, abide_dataset, hcp_dataset]
+        [rest_train_dataset, abide_dataset, aomic_dataset]
     )
     val_dataset = torch.utils.data.ConcatDataset([rest_val_dataset])
 
