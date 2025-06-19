@@ -226,11 +226,15 @@ def aug_batch(Xb):
 
 def create_corr(data):
     eps = 1e-16
+    data = data - np.nanmean(data, axis=0, keepdims=True)
+    data = data / (np.nanstd(data, axis=0, keepdims=True) + eps)
+
     R = np.corrcoef(data)
     R[np.isnan(R)] = 0
     R = R - np.diag(np.diag(R))
     R[R >= 1] = 1 - eps
     corr = 0.5 * np.log((1 + R) / (1 - R))
+
     return corr
 
 

@@ -35,6 +35,7 @@ class RESTfMRIDataset(Dataset):
         data_dir="./Data/REST-meta-MDD/fMRI/AAL",
         metadata_path="./Data/REST-meta-MDD/metadata.csv",
         split="full",  # Options: 'train', 'dev', 'test', 'full'
+        label="mdd",  # "mdd", "sex", "age"
         cache_path=None,
     ):
         super().__init__()
@@ -52,7 +53,13 @@ class RESTfMRIDataset(Dataset):
         self.edge_indices, self.node_features = self._load_cache()
         self.num_samples = self.node_features.shape[0]
         self.num_nodes = self.node_features.shape[1]
-        self.labels = torch.from_numpy(metadata.label.values)
+
+        if label == "mdd":
+            self.labels = torch.from_numpy(metadata.label.values)
+        elif label == "sex":
+            self.labels = torch.from_numpy(metadata.sex.values - 1)
+        elif label == "age":
+            self.labels = torch.from_numpy(metadata.age.values)
 
     def _load_metadata(self, metadata_path, split):
         metadata = pd.read_csv(metadata_path)
@@ -289,10 +296,45 @@ class COBREfMRIDataset(Dataset):
         return self.dataset[idx]
 
 
+# class HCPfMRIDataset(Dataset):
+#     def __init__(self, data_dir="./Data/HCP1200/", split="full"):
+#         super().__init__()
+#         self.dataset = self.prepare_data(data_dir, split)
+
+#     def __getitem__(self, idx):
+#         return self.dataset[idx]
+
+#     def __len__(self):
+#         return len(self.dataset)
+
+#     def prepare_data(self, data_dir, split):
+#         dataset = []
+#         data_dir = os.path.join(data_dir, "AAL116")
+
+#         for file_name in os.listdir(data_dir):
+#             if file_name.endswith(".npy"):
+#                 conn_matrix = np.load(os.path.join(data_dir, file_name))
+#                 node_features, edge_index = corr_to_graph(conn_matrix)
+#                 graph = Data(
+#                     x=torch.tensor(node_features, dtype=torch.float),
+#                     edge_index=torch.tensor(edge_index, dtype=torch.long),
+#                 )
+#                 dataset.append(graph)
+
+#         if split == "full":
+#             return dataset
+#         else:
+#             raise ValueError(
+#                 "Invalid split. Use 'full' for HCP dataset as it does not have train/dev/test splits."
+#             )
+
+
 class HCPfMRIDataset(Dataset):
-    def __init__(self, data_dir="./Data/HCP1200/", split="full"):
+    def __init__(self, data_dir="./Data/QLiData/HCP", split="full"):
         super().__init__()
+        self.num_classes = None
         self.dataset = self.prepare_data(data_dir, split)
+        self.num_nodes = self.dataset[0].x.shape[0] if self.dataset else 0
 
     def __getitem__(self, idx):
         return self.dataset[idx]
@@ -302,24 +344,42 @@ class HCPfMRIDataset(Dataset):
 
     def prepare_data(self, data_dir, split):
         dataset = []
-        data_dir = os.path.join(data_dir, "AAL116")
 
         for file_name in os.listdir(data_dir):
             if file_name.endswith(".npy"):
-                conn_matrix = np.load(os.path.join(data_dir, file_name))
+                study_id = file_name.split(".")[0]
+
+                if "_" in study_id:
+                    study_id = study_id.split("_")[-1]
+
+                time_series = np.load(os.path.join(data_dir, file_name))
+                conn_matrix = create_corr(time_series.T)
                 node_features, edge_index = corr_to_graph(conn_matrix)
                 graph = Data(
-                    x=torch.tensor(node_features, dtype=torch.float),
-                    edge_index=torch.tensor(edge_index, dtype=torch.long),
+                    x=node_features,
+                    edge_index=edge_index,
                 )
                 dataset.append(graph)
 
-        if split == "full":
+        train, rest = train_test_split(
+            dataset,
+            test_size=0.2,
+            random_state=42,
+        )
+        dev, test = train_test_split(
+            rest,
+            test_size=0.5,
+            random_state=42,
+        )
+
+        if split == "train":
+            return train
+        elif split == "dev":
+            return dev
+        elif split == "test":
+            return test
+        elif split == "full":
             return dataset
-        else:
-            raise ValueError(
-                "Invalid split. Use 'full' for HCP dataset as it does not have train/dev/test splits."
-            )
 
 
 class AOMICfMRIDataset(Dataset):
@@ -358,7 +418,9 @@ class AOMICfMRIDataset(Dataset):
 class BSNIPfMRIDataset(Dataset):
     def __init__(self, data_dir="./Data/QLiData/BSNIP", split="full"):
         super().__init__()
+        self.num_classes = None
         self.dataset = self.prepare_data(data_dir, split)
+        self.num_nodes = self.dataset[0].x.shape[0] if self.dataset else 0
 
     def __getitem__(self, idx):
         return self.dataset[idx]
@@ -368,24 +430,55 @@ class BSNIPfMRIDataset(Dataset):
 
     def prepare_data(self, data_dir, split):
         dataset = []
+        meta = pd.read_csv(os.path.join(data_dir, "bsnip_label.csv"), index_col=1)
+        self.num_classes = len(meta.group.unique())
+        lab_to_id = {lab: i for i, lab in enumerate(meta.group.unique())}
 
         for file_name in os.listdir(data_dir):
             if file_name.endswith(".npy"):
+                study_id = file_name.split(".")[0]
+
+                if "_" in study_id:
+                    study_id = study_id.split("_")[-1]
+
+                group = meta.loc[study_id].group
+                label = lab_to_id[group]
+
                 time_series = np.load(os.path.join(data_dir, file_name))
                 conn_matrix = create_corr(time_series.T)
                 node_features, edge_index = corr_to_graph(conn_matrix)
                 graph = Data(
-                    x=torch.tensor(node_features, dtype=torch.float),
-                    edge_index=torch.tensor(edge_index, dtype=torch.long),
+                    x=node_features,
+                    edge_index=edge_index,
+                    y=torch.tensor([label], dtype=torch.long),
                 )
                 dataset.append(graph)
 
-        if split == "full":
+        train, rest = train_test_split(
+            dataset,
+            test_size=0.2,
+            random_state=42,
+            stratify=[data.y.item() for data in dataset],
+        )
+        dev, test = train_test_split(
+            rest,
+            test_size=0.5,
+            random_state=42,
+            stratify=[data.y.item() for data in rest],
+        )
+
+        if split == "train":
+            return train
+        elif split == "dev":
+            return dev
+        elif split == "test":
+            return test
+        elif split == "full":
             return dataset
-        else:
-            raise ValueError(
-                "Invalid split. Use 'full' for HCP dataset as it does not have train/dev/test splits."
-            )
+
+    @property
+    def labels(self):
+        return torch.tensor([data.y.item() for data in self.dataset], dtype=torch.long)
 
 
 class RESTsMRIDataset(Dataset):
