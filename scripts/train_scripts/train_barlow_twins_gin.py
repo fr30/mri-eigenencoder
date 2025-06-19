@@ -8,7 +8,14 @@ import warnings
 
 from accelerate import Accelerator
 from src.model import BarlowTwinsGIN
-from src.dataset import RESTfMRIDataset, BTDataLoader, ABIDEfMRIDataset
+from src.dataset import (
+    RESTfMRIDataset,
+    BTDataLoader,
+    ABIDEfMRIDataset,
+    AOMICfMRIDataset,
+    BSNIPfMRIDataset,
+    HCPfMRIDataset,
+)
 from src.loss import BTLoss
 from src.optim import LARS
 from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
@@ -90,11 +97,13 @@ def main(cfg):
 
     rest_train_dataset = RESTfMRIDataset(split="train", cache_path=cfg.meta.cache_path)
     rest_val_dataset = RESTfMRIDataset(split="dev")
-    abide_train_dataset = ABIDEfMRIDataset(split="full")
-    # abide_val_dataset = ABIDEfMRIDataset(split="dev")
+    abide_dataset = ABIDEfMRIDataset(split="train")
+    aomic_dataset = AOMICfMRIDataset(split="full")
+    bsnip_dataset = BSNIPfMRIDataset(split="full")
+    hcp_dataset = HCPfMRIDataset(split="train")
 
     train_dataset = torch.utils.data.ConcatDataset(
-        [rest_train_dataset, abide_train_dataset]
+        [rest_train_dataset, abide_dataset, hcp_dataset, aomic_dataset, bsnip_dataset]
     )
     val_dataset = torch.utils.data.ConcatDataset([rest_val_dataset])
 
