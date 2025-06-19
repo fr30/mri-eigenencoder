@@ -121,6 +121,7 @@ class RESTfMRIDataset(Dataset):
             np.save(node_features_path, node_features)
 
     def _cache_exists(self):
+        return False
         if not os.path.exists(self.cache_path):
             return False
 
@@ -151,6 +152,59 @@ class RESTfMRIDataset(Dataset):
 
 
 class ABIDEfMRIDataset(Dataset):
+    def __init__(self, data_dir="./Data/QLiData/ABIDE", split="full"):
+        super().__init__()
+        self.num_classes = None
+        self.dataset = self.prepare_data(data_dir, split)
+        self.num_nodes = self.dataset[0].x.shape[0] if self.dataset else 0
+
+    def __getitem__(self, idx):
+        return self.dataset[idx]
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def prepare_data(self, data_dir, split):
+        dataset = []
+
+        for file_name in os.listdir(data_dir):
+            if file_name.endswith(".npy"):
+                study_id = file_name.split(".")[0]
+
+                if "_" in study_id:
+                    study_id = study_id.split("_")[-1]
+
+                time_series = np.load(os.path.join(data_dir, file_name))
+                conn_matrix = create_corr(time_series.T)
+                node_features, edge_index = corr_to_graph(conn_matrix)
+                graph = Data(
+                    x=node_features,
+                    edge_index=edge_index,
+                )
+                dataset.append(graph)
+
+        train, rest = train_test_split(
+            dataset,
+            test_size=0.2,
+            random_state=42,
+        )
+        dev, test = train_test_split(
+            rest,
+            test_size=0.5,
+            random_state=42,
+        )
+
+        if split == "train":
+            return train
+        elif split == "dev":
+            return dev
+        elif split == "test":
+            return test
+        elif split == "full":
+            return dataset
+
+
+class ABIDEfMRIDataset2(Dataset):
     def __init__(
         self,
         data_dir="./Data/ABIDE",

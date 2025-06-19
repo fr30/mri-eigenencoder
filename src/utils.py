@@ -241,14 +241,12 @@ def create_corr(data):
 def corr_to_graph(corr):
     node_features = torch.from_numpy(corr).to(torch.float32)
     topk = node_features.reshape(-1)
-    topk, _ = torch.sort(abs(topk), dim=0, descending=True)
-    threshold = topk[int(node_features.shape[0] ** 2 / 20 * 2)]
-    adj = (torch.abs(node_features) >= threshold).to(int)
+    topk, _ = torch.sort(topk, dim=0, descending=True)
+    max_edges = int(node_features.shape[0] ** 2 / 20 * 2)
+    threshold = topk[max_edges]
+    adj = (node_features >= threshold).to(int)
+    # adj = (torch.abs(node_features) >= threshold).to(int)
     edge_index = dense_to_sparse(adj)[0]
-
-    # if num_edges is None:
-    #     num_edges = edge_index.shape[1]
-
-    # edge_index = edge_index[:, :num_edges]
+    edge_index = edge_index[:, :max_edges]
 
     return node_features, edge_index
