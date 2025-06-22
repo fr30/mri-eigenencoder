@@ -115,8 +115,8 @@ class GPSEncoder(torch.nn.Module):
 
         self.emb_dim = emb_dim
         self.tokenizer = nn.Linear(in_channels, emb_dim - pe_dim)
-        self.pe_lin = nn.Linear(120, pe_dim)
-        self.pe_norm = nn.BatchNorm1d(120)
+        self.pe_lin = nn.Linear(60, pe_dim)
+        self.pe_norm = nn.BatchNorm1d(60)
 
         self.convs = nn.ModuleList()
         for _ in range(num_layers):
