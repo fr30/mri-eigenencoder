@@ -91,15 +91,16 @@ def main(cfg):
         device = torch.device("cpu")
 
     rest_train_dataset = RESTfMRIDataset(split="train", cache_path=cfg.meta.cache_path)
-    rest_val_dataset = RESTfMRIDataset(split="dev")
     abide_dataset = ABIDEfMRIDataset(split="train")
+    hcp_dataset = HCPfMRIDataset(split="train")
     aomic_dataset = AOMICfMRIDataset(split="full")
     bsnip_dataset = BSNIPfMRIDataset(split="full")
-    hcp_dataset = HCPfMRIDataset(split="train")
 
     train_dataset = torch.utils.data.ConcatDataset(
         [rest_train_dataset, abide_dataset, hcp_dataset, aomic_dataset, bsnip_dataset]
     )
+
+    rest_val_dataset = RESTfMRIDataset(split="dev")
     val_dataset = torch.utils.data.ConcatDataset([rest_val_dataset])
 
     train_dataloader = HFMCADataLoader(

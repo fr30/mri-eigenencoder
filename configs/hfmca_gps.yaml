@@ -1,0 +1,31 @@
+
+wandb:
+  enabled: false
+  project: "hfmca-gps"
+  run_name: "gps_hfmca_512"
+
+meta:
+  test: true
+  seed: 2136
+  num_workers: 1
+  save_model_freq: 1 # 0 means no saving
+  save_model_path: "models/gps_hfmca_512"
+  cache_path: null
+
+train:
+  epochs: 100
+  lr: 1e-3
+  lr_scheduler: false
+  batch_size: 16
+  lambd: 0.0051
+  weight_decay: 1e-6
+  lars: false
+  num_views: 9
+  
+encoder:
+  emb_dim: 512
+  pe_dim: 32
+  num_layers: 4
+  dropout: 0.5
+  norm: "batch" # []"batch", "layer", "graph", null]
+  attn_type: "multihead" # "multihead", "performer"

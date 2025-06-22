@@ -4,7 +4,8 @@ import torch.nn.functional as F
 from torch import nn
 from torch_geometric.nn.models import GIN
 from torch_geometric.nn.pool import global_mean_pool
-from torch_geometric.data import Batch
+from torch_geometric.nn import GINConv, GPSConv, global_add_pool
+from torch_geometric.nn.attention import PerformerAttention
 
 
 class GINEncoder(nn.Module):
@@ -77,6 +78,96 @@ class GINEncoder(nn.Module):
         return x
 
 
+class RedrawProjection:
+    def __init__(self, model: nn.Module, redraw_interval=None):
+        self.model = model
+        self.redraw_interval = redraw_interval
+        self.num_last_redraw = 0
+
+    def redraw_projections(self):
+        if not self.model.training or self.redraw_interval is None:
+            return
+        if self.num_last_redraw >= self.redraw_interval:
+            fast_attentions = [
+                module
+                for module in self.model.modules()
+                if isinstance(module, PerformerAttention)
+            ]
+            for fast_attention in fast_attentions:
+                fast_attention.redraw_projection_matrix()
+            self.num_last_redraw = 0
+            return
+        self.num_last_redraw += 1
+
+
+class GPSEncoder(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels=116,  # Number of nodes
+        emb_dim=512,
+        pe_dim=8,
+        num_layers=10,
+        norm_out="batch_norm",  # ['sigmoid', 'batch_norm', 'none']
+        attn_type="multihead",  # 'multihead', 'performer'
+        dropout=0.5,
+    ):
+        super().__init__()
+
+        self.emb_dim = emb_dim
+        self.tokenizer = nn.Linear(in_channels, emb_dim - pe_dim)
+        self.pe_lin = nn.Linear(120, pe_dim)
+        self.pe_norm = nn.BatchNorm1d(120)
+
+        self.convs = nn.ModuleList()
+        for _ in range(num_layers):
+            fc = nn.Sequential(
+                nn.Linear(emb_dim, emb_dim),
+                nn.ReLU(),
+                nn.Linear(emb_dim, emb_dim),
+            )
+            conv = GPSConv(
+                emb_dim,
+                GINConv(fc),
+                heads=4,
+                attn_type=attn_type,
+                attn_kwargs={"dropout": dropout},
+            )
+            self.convs.append(conv)
+
+        self.redraw_projection = RedrawProjection(
+            self.convs, redraw_interval=1000 if attn_type == "performer" else None
+        )
+
+        if norm_out == "batch_norm":
+            self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
+        elif norm_out == "sigmoid":
+            self.norm_out = F.sigmoid
+        else:
+            self.norm_out = nn.Identity()
+
+    def forward(self, data):
+        with torch.no_grad():
+            self.redraw_projection.redraw_projections()
+
+        x = data.x
+        pe = data.pe
+        edge_index = data.edge_index
+        batch = data.batch
+
+        x_pe = self.pe_norm(pe)
+        x = self.tokenizer(x)
+        x_pe = self.pe_lin(x_pe)
+        x = torch.cat((x, x_pe), 1)
+
+        for conv in self.convs:
+            x = conv(x, edge_index, batch)
+
+        x = self.norm_out(x)
+        x = global_mean_pool(x, batch)
+
+        return x
+
+
 class Classifier(nn.Module):
     def __init__(
         self,
@@ -128,6 +219,54 @@ class GINEncoderWithProjector(nn.Module):
             num_nodes=num_nodes,
             emb_dim=emb_dim,
             norm_out=enc_norm_out,
+        )
+
+        self.projector = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim * 4),
+            nn.BatchNorm1d(emb_dim * 4),
+            nn.ReLU(),
+            nn.Linear(emb_dim * 4, emb_dim * 4),
+            nn.BatchNorm1d(emb_dim * 4),
+            nn.ReLU(),
+            nn.Linear(emb_dim * 4, emb_dim * 4),
+            nn.BatchNorm1d(emb_dim * 4),
+            nn.ReLU(),
+        )
+        if norm_out == "batch":
+            self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
+        elif norm_out == "sigmoid":
+            self.norm_out = F.sigmoid
+        else:
+            self.norm_out = nn.Identity()
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.projector(x)
+        x = self.norm_out(x)
+
+        return x
+
+
+class GPSEncoderWithProjector(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        emb_dim,
+        pe_dim,
+        num_layers,
+        dropout,
+        norm_out,
+        attn_type,
+    ):
+        super().__init__()
+        self.encoder = GPSEncoder(
+            in_channels=in_channels,
+            emb_dim=emb_dim,
+            pe_dim=pe_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            norm_out=norm_out,
+            attn_type=attn_type,
         )
 
         self.projector = nn.Sequential(
@@ -435,6 +574,47 @@ class HFMCAGIN(nn.Module):
             num_nodes=num_nodes,
             norm_out="batch",
             enc_norm_out="batch",
+        )
+        self.final_net = SimpleCNN(4 * emb_dim, 4 * emb_dim, emb_dim, nviews)
+        self.nviews = nviews
+
+    def forward(self, x):
+        bsize = x.batch_size // self.nviews
+        y = self.backbone(x)
+        y = y.squeeze(-1).squeeze(-1)
+        y = torch.stack([y[bsize * k : bsize * (k + 1)] for k in range(0, self.nviews)])
+        y = y.permute(1, 2, 0)
+
+        y_dash = self.final_net(y).squeeze(-1)
+
+        return y, y_dash
+
+    @property
+    def encoder(self):
+        return self.backbone.encoder
+
+
+class HFMCAGPS(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        emb_dim,
+        pe_dim,
+        num_layers,
+        dropout,
+        norm_out,
+        attn_type,
+        nviews,
+    ):
+        super().__init__()
+        self.backbone = GPSEncoderWithProjector(
+            in_channels=in_channels,
+            emb_dim=emb_dim,
+            pe_dim=pe_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            norm_out=norm_out,
+            attn_type=attn_type,
         )
         self.final_net = SimpleCNN(4 * emb_dim, 4 * emb_dim, emb_dim, nviews)
         self.nviews = nviews

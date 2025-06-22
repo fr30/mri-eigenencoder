@@ -4,10 +4,14 @@ import numpy as np
 import os
 import pandas as pd
 import scipy.io as scio
+import torch_geometric.transforms as T
+import torch_geometric
 import torch
 
+from functools import lru_cache
 from src.utils import create_corr, corr_to_graph
 from torch_geometric.data import Data, Batch
+from torch_geometric.loader import CachedLoader
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 
@@ -779,6 +783,28 @@ class DataLoader(torch.utils.data.DataLoader):
     #     return [torch.from_numpy(x.copy()).to(torch.float32) for x in X_aug]
 
 
+class GPSConcatDataset(torch.utils.data.ConcatDataset):
+    def __init__(self, datasets):
+        super().__init__(datasets)
+        self.num_nodes = datasets[0].num_nodes if datasets else 0
+        self.pe_transform = T.AddRandomWalkPE(walk_length=120, attr_name="pe")
+        self.cache = self._prepare_cache()
+
+    def __getitem__(self, idx):
+        return self.cache[idx]
+
+    def _prepare_cache(self):
+        cache = {}
+
+        for i in range(len(self)):
+            cache[i] = self.pe_transform(super().__getitem__(i))
+
+        return cache
+
+    def __len__(self):
+        return super().__len__()
+
+
 class BTDataLoader(torch.utils.data.DataLoader):
     def __init__(
         self,
@@ -795,10 +821,8 @@ class BTDataLoader(torch.utils.data.DataLoader):
         self.aug2 = self._construct_aug()
 
     def _batch_data(self, x):
-        x1 = [Data(*self.aug1(d.x, d.edge_index)) for d in x]
-        x1_batch = Batch.from_data_list(x1)
-        x2 = [Data(*self.aug2(d.x, d.edge_index)) for d in x]
-        x2_batch = Batch.from_data_list(x2)
+        x1_batch = Batch.from_data_list(x)
+        x2_batch = Batch.from_data_list(x)
         # x1_batch, x2_batch = Batch.from_data_list(x), Batch.from_data_list(x)
         return x1_batch, x2_batch
 
@@ -835,7 +859,12 @@ class HFMCADataLoader(torch.utils.data.DataLoader):
 
         for aug in self.augs:
             for d in x:
-                views.append(Data(*aug(d.x, d.edge_index)))
+                augmented = Data(*aug(d.x, d.edge_index))
+
+                if d["pe"] is not None:
+                    augmented["pe"] = d["pe"]
+
+                views.append(augmented)
 
         views = Batch.from_data_list(views)
 
@@ -852,3 +881,18 @@ class HFMCADataLoader(torch.utils.data.DataLoader):
             ],
             num_choices=1,
         )
+
+
+class GPSCachedLoader(CachedLoader):
+    def __init__(self, dataset, batch_size, num_workers, shuffle=False):
+        loader = torch_geometric.loader.DataLoader(
+            dataset=dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=shuffle,
+        )
+        transform = T.AddRandomWalkPE(walk_length=120, attr_name="pe")
+        super().__init__(loader, transform=transform)
+
+        self.dataset = dataset
+        self.batch_size = loader.batch_size
