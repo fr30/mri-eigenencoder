@@ -787,7 +787,7 @@ class GPSConcatDataset(torch.utils.data.ConcatDataset):
     def __init__(self, datasets):
         super().__init__(datasets)
         self.num_nodes = datasets[0].num_nodes if datasets else 0
-        self.pe_transform = T.AddRandomWalkPE(walk_length=120, attr_name="pe")
+        self.pe_transform = T.AddRandomWalkPE(walk_length=60, attr_name="pe")
         self.cache = self._prepare_cache()
 
     def __getitem__(self, idx):
@@ -823,7 +823,18 @@ class BTDataLoader(torch.utils.data.DataLoader):
     def _batch_data(self, x):
         x1_batch = Batch.from_data_list(x)
         x2_batch = Batch.from_data_list(x)
-        # x1_batch, x2_batch = Batch.from_data_list(x), Batch.from_data_list(x)
+
+        for i in range(len(x)):
+            x1 = self.aug1(x[i].x, x[i].edge_index)
+            x2 = self.aug2(x[i].x, x[i].edge_index)
+
+            if hasattr(x[i], "pe"):
+                x1["pe"] = x[i]["pe"]
+                x2["pe"] = x[i]["pe"]
+
+            x1_batch[i] = Data(*x1)
+            x2_batch[i] = Data(*x2)
+
         return x1_batch, x2_batch
 
     def _construct_aug(self):
@@ -891,7 +902,7 @@ class GPSCachedLoader(CachedLoader):
             num_workers=num_workers,
             shuffle=shuffle,
         )
-        transform = T.AddRandomWalkPE(walk_length=120, attr_name="pe")
+        transform = T.AddRandomWalkPE(walk_length=60, attr_name="pe")
         super().__init__(loader, transform=transform)
 
         self.dataset = dataset
