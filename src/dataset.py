@@ -793,6 +793,9 @@ class GPSConcatDataset(torch.utils.data.ConcatDataset):
     def __getitem__(self, idx):
         return self.cache[idx]
 
+    def __len__(self):
+        return super().__len__()
+
     def _prepare_cache(self):
         cache = {}
 
@@ -800,9 +803,6 @@ class GPSConcatDataset(torch.utils.data.ConcatDataset):
             cache[i] = self.pe_transform(super().__getitem__(i))
 
         return cache
-
-    def __len__(self):
-        return super().__len__()
 
 
 class BTDataLoader(torch.utils.data.DataLoader):
@@ -861,7 +861,7 @@ class HFMCADataLoader(torch.utils.data.DataLoader):
             for d in x:
                 augmented = Data(*aug(d.x, d.edge_index))
 
-                if d["pe"] is not None:
+                if hasattr(d, "pe"):
                     augmented["pe"] = d["pe"]
 
                 views.append(augmented)
