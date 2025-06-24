@@ -774,14 +774,6 @@ class DataLoader(torch.utils.data.DataLoader):
 
         return imgs_batch, graphs_batch, labels_batch
 
-    # def _augment_data(self, X):
-    #     "Apply augmentation"
-
-    #     X_aug = patch_extraction(X, sizePatches=self.patch_size, Npatches=1)
-    #     X_aug = aug_batch(X_aug)
-
-    #     return [torch.from_numpy(x.copy()).to(torch.float32) for x in X_aug]
-
 
 class GPSConcatDataset(torch.utils.data.ConcatDataset):
     def __init__(self, datasets):
@@ -821,19 +813,21 @@ class BTDataLoader(torch.utils.data.DataLoader):
         self.aug2 = self._construct_aug()
 
     def _batch_data(self, x):
-        x1_batch = Batch.from_data_list(x)
-        x2_batch = Batch.from_data_list(x)
+        x1_batch, x2_batch = [], []
 
-        for i in range(len(x)):
-            x1 = self.aug1(x[i].x, x[i].edge_index)
-            x2 = self.aug2(x[i].x, x[i].edge_index)
+        for d in x:
+            x1 = Data(*self.aug1(d.x, d.edge_index))
+            x2 = Data(*self.aug2(d.x, d.edge_index))
 
-            if hasattr(x[i], "pe"):
-                x1["pe"] = x[i]["pe"]
-                x2["pe"] = x[i]["pe"]
+            if hasattr(d, "pe"):
+                x1["pe"] = d["pe"]
+                x2["pe"] = d["pe"]
 
-            x1_batch[i] = Data(*x1)
-            x2_batch[i] = Data(*x2)
+            x1_batch.append(x1)
+            x2_batch.append(x2)
+
+        x1_batch = Batch.from_data_list(x1_batch)
+        x2_batch = Batch.from_data_list(x2_batch)
 
         return x1_batch, x2_batch
 

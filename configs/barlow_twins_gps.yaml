@@ -2,29 +2,30 @@
 wandb:
   enabled: false
   project: "barlow-twins-graph"
-  run_name: "baseline_adam_test"
+  run_name: "gps"
 
 meta:
   test: true
   seed: 2136
   num_workers: 4
   save_model_freq: 100 # 0 means no saving
-  save_model_path: "models/bt_gin"
+  save_model_path: "models/bt_gps"
   cache_path: null
 
 train:
   epochs: 200
   lr: 1e-3
   lr_scheduler: true
-  batch_size: 256
+  batch_size: 16
   lambd: 0.0051
   weight_decay: 1e-6
   lars: false
   
 encoder:
   emb_dim: 512
-  hidden_channels: 1024
-  num_layers: 2
+  pe_dim: 32
+  num_layers: 4
   dropout: 0.5
-  emb_style: "none" # []"none", "replace", "concat"]
   norm: "batch" # []"batch", "layer", "graph", null]
+  attn_type: "multihead" # "multihead", "performer"
+

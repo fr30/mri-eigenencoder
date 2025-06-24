@@ -306,7 +306,6 @@ class BarlowTwinsGIN(nn.Module):
         emb_style="none",  # ['none, 'concat', 'replace']
         num_nodes=None,
         emb_dim=128,
-        norm_out="batch",  # ['sigmoid', 'batch', 'none']
     ):
         super().__init__()
 
@@ -319,8 +318,39 @@ class BarlowTwinsGIN(nn.Module):
             emb_style=emb_style,
             num_nodes=num_nodes,
             emb_dim=emb_dim,
-            norm_out=norm_out,
+            norm_out="batch",
             enc_norm_out="none",
+        )
+
+    def forward(self, x1, x2):
+        return self.model(x1), self.model(x2)
+
+    @property
+    def encoder(self):
+        return self.model.encoder
+
+
+class BarlowTwinsGPS(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        emb_dim,
+        pe_dim,
+        num_layers,
+        dropout,
+        norm_out,
+        attn_type,
+    ):
+        super().__init__()
+
+        self.model = GPSEncoderWithProjector(
+            in_channels=in_channels,
+            emb_dim=emb_dim,
+            pe_dim=pe_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            norm_out=norm_out,
+            attn_type=attn_type,
         )
 
     def forward(self, x1, x2):

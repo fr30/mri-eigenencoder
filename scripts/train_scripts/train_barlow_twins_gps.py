@@ -2,12 +2,10 @@ import hydra
 import time
 import torch
 import os
-import torch.utils
 import wandb
 import warnings
 
-from accelerate import Accelerator
-from src.model import BarlowTwinsGIN
+from src.model import BarlowTwinsGPS
 from src.dataset import (
     RESTfMRIDataset,
     BTDataLoader,
@@ -15,6 +13,7 @@ from src.dataset import (
     AOMICfMRIDataset,
     BSNIPfMRIDataset,
     HCPfMRIDataset,
+    GPSConcatDataset,
 )
 from src.loss import BTLoss
 from src.optim import LARS
@@ -75,7 +74,7 @@ def test_epoch(data_loader, criterion, model, device):
     return cum_loss
 
 
-@hydra.main(version_base=None, config_path="configs", config_name="barlow_twins_gin")
+@hydra.main(version_base=None, config_path="configs", config_name="barlow_twins_gps")
 def main(cfg):
     if cfg.wandb.enabled:
         run = wandb.init(
@@ -102,10 +101,10 @@ def main(cfg):
     bsnip_dataset = BSNIPfMRIDataset(split="train")
     aomic_dataset = AOMICfMRIDataset(split="full")
 
-    train_dataset = torch.utils.data.ConcatDataset(
+    train_dataset = GPSConcatDataset(
         [rest_train_dataset, abide_dataset, hcp_dataset, aomic_dataset, bsnip_dataset]
     )
-    val_dataset = torch.utils.data.ConcatDataset([rest_val_dataset])
+    val_dataset = GPSConcatDataset([rest_val_dataset])
 
     train_dataloader = BTDataLoader(
         train_dataset,
@@ -123,15 +122,14 @@ def main(cfg):
         drop_last=False,
     )
 
-    model = BarlowTwinsGIN(
+    model = BarlowTwinsGPS(
         in_channels=rest_train_dataset.num_nodes,
-        hidden_channels=cfg.encoder.hidden_channels,
+        emb_dim=cfg.encoder.emb_dim,
+        pe_dim=cfg.encoder.pe_dim,
         num_layers=cfg.encoder.num_layers,
         dropout=cfg.encoder.dropout,
-        norm=cfg.encoder.norm,
-        emb_style=cfg.encoder.emb_style,
-        num_nodes=rest_train_dataset.num_nodes,
-        emb_dim=cfg.encoder.emb_dim,
+        norm_out=cfg.encoder.norm,
+        attn_type=cfg.encoder.attn_type,
     ).to(device)
 
     if cfg.train.lars:
