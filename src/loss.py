@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 
 class HFMCALoss:
@@ -133,6 +134,7 @@ def fmcat_loss(fmri_f, smri_f):
     return tsd, tsd2.detach()
 
 
+# Implementation from https://github.com/MaxLikesMath/Barlow-Twins-Pytorch
 class BTLoss:
     def __init__(self, batch_size, accelerator=None, lambd=0.0051):
         self.batch_size = batch_size
@@ -159,18 +161,41 @@ class BTLoss:
         assert n == m
         return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
-    # c.div_(self.args.batch_size)
-    # torch.distributed.all_reduce(c)
 
+# Implementation from https://github.com/sthalles/SimCLR/
+class InfoNCELoss:
+    def __init__(self, device, temperature=0.07):
+        self.temperature = temperature
+        self.device = device
+        self.n_views = 2
 
-# def fmcat_loss(fmri_f, smri_f):
-#     eps = torch.eye(fmri_f.shape[1], device=fmri_f.device) * 1e-5
-#     RF = (fmri_f.T @ fmri_f) / fmri_f.shape[0] + eps
-#     RG = (smri_f.T @ smri_f) / smri_f.shape[0] + eps
-#     P = (fmri_f.T @ smri_f) / smri_f.shape[0]
+    def __call__(self, features):
+        batch_size = features.shape[0] // self.n_views
+        labels = torch.cat(
+            [torch.arange(batch_size) for i in range(self.n_views)],
+            dim=0,
+        )
+        labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+        labels = labels.to(self.device)
 
-#     lhs = torch.linalg.lstsq(RF, P).solution
-#     rhs = torch.linalg.lstsq(RG, P.T).solution
-#     tsd = -torch.trace(lhs @ rhs)
+        features = F.normalize(features, dim=1)
 
-#     return tsd, torch.tensor(0)
+        similarity_matrix = torch.matmul(features, features.T)
+        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(self.device)
+        labels = labels[~mask].view(labels.shape[0], -1)
+        similarity_matrix = similarity_matrix[~mask].view(
+            similarity_matrix.shape[0], -1
+        )
+        positives = similarity_matrix[labels.bool()].view(labels.shape[0], -1)
+
+        # select only the negatives the negatives
+        negatives = similarity_matrix[~labels.bool()].view(
+            similarity_matrix.shape[0], -1
+        )
+
+        logits = torch.cat([positives, negatives], dim=1)
+        labels = torch.zeros(logits.shape[0], dtype=torch.long).to(self.device)
+        logits = logits / self.temperature
+        loss = F.cross_entropy(logits, labels)
+
+        return loss

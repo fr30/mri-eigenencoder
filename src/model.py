@@ -663,3 +663,34 @@ class HFMCAGPS(nn.Module):
     @property
     def encoder(self):
         return self.backbone.encoder
+
+
+class SimCLRGPS(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        emb_dim,
+        pe_dim,
+        num_layers,
+        dropout,
+        norm_out,
+        attn_type,
+    ):
+        super().__init__()
+        self.backbone = GPSEncoderWithProjector(
+            in_channels=in_channels,
+            emb_dim=emb_dim,
+            pe_dim=pe_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            norm_out=norm_out,
+            attn_type=attn_type,
+        )
+
+    def forward(self, x):
+        y = self.backbone(x)
+        return y
+
+    @property
+    def encoder(self):
+        return self.backbone.encoder

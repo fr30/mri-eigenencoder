@@ -1,0 +1,30 @@
+
+wandb:
+  enabled: true
+  project: "simclr"
+  run_name: "gps_simclr"
+
+meta:
+  test: true
+  seed: 2136
+  num_workers: 1
+  save_model_freq: 0 # 0 means no saving
+  save_model_path: "models/gps_simclr"
+  cache_path: null
+
+train:
+  epochs: 200
+  lr: 1e-3
+  lr_scheduler: true
+  batch_size: 256
+  lars: false
+  weight_decay: 1e-6
+  temperature: 0.07
+  
+encoder:
+  emb_dim: 512
+  pe_dim: 32
+  num_layers: 4
+  dropout: 0.5
+  norm: "batch" # []"batch", "layer", "graph", null]
+  attn_type: "multihead" # "multihead", "performer"
