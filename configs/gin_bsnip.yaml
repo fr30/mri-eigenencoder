@@ -1,0 +1,36 @@
+wandb:
+  run_name: "baseline_nonemb_512_freeze"
+  # run_name: "baseline_nonemb_512_linear"
+  # run_name: "btwins15_512_freeze_kfold"
+  # run_name: "hfmca_512_nonemb_rest+abide_noschedule"
+  enabled: true
+  project: "gin-bsnip"
+
+meta:
+  test: true
+  seed: 2131
+  num_workers: 8
+
+train:
+  epochs: 250
+  lr: 1e-3
+  lr_scheduler: true # Best with set to true
+  batch_size: 256
+  lars: false
+  # weight_decay: 0 
+  weight_decay: 1e-6
+
+classifier:
+  linear: false
+
+encoder:
+  emb_dim: 512
+  hidden_channels: 1024 
+  num_layers: 2
+  dropout: 0.5
+  emb_style: "none" # []"none", "replace", "concat"]
+  norm: "batch" # []"batch", "layer", "graph", null]
+  # checkpoint_path: "models/hfmca_nonemb_rest+abide/fmri_enc_ep200.pt" # Can be null
+  # checkpoint_path: "models/barlow_twins_graph/fmri_enc_ep15.pt" # Can be null
+  checkpoint_path: null 
+  freeze: true
