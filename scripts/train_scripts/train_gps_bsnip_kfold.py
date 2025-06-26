@@ -63,10 +63,10 @@ def train_epoch(data_loader, model, optimizer, scheduler, device):
         scheduler.adjust_lr(optimizer)
         optimizer.zero_grad()
         out = model(data)
-        loss = F.binary_cross_entropy_with_logits(out, data.y.to(torch.float32))
+        loss = F.cross_entropy(out, data.y)
         loss.backward()
         optimizer.step()
-        correct += ((out > 0) == data.y).sum().item()
+        correct += (out.argmax(dim=1) == data.y).sum().item()
         running_loss += loss.item()
 
     cum_loss = running_loss * data_loader.batch_size / len(data_loader.dataset)
@@ -84,9 +84,9 @@ def test_epoch(data_loader, model, device):
     for data in data_loader:
         data = data.to(device)
         out = model(data)
-        loss = F.binary_cross_entropy_with_logits(out, data.y.to(torch.float32))
+        loss = F.cross_entropy(out, data.y)
         running_loss += loss.item()
-        correct += ((out > 0) == data.y).sum().item()
+        correct += (out.argmax(dim=1) == data.y).sum().item()
 
     cum_loss = running_loss * data_loader.batch_size / len(data_loader.dataset)
     acc = correct / len(data_loader.dataset)
@@ -165,7 +165,7 @@ def main(cfg):
 
         model = Classifier(
             encoder=encoder,
-            num_classes=1,
+            num_classes=dataset.num_classes,
             linear=cfg.classifier.linear,
         ).to(device)
 

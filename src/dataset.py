@@ -796,6 +796,10 @@ class GPSConcatDataset(torch.utils.data.ConcatDataset):
 
         return cache
 
+    @property
+    def num_classes(self):
+        return self.datasets[0].num_classes if self.datasets else 0
+
 
 class BTDataLoader(torch.utils.data.DataLoader):
     def __init__(
