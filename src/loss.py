@@ -199,3 +199,82 @@ class InfoNCELoss:
         loss = F.cross_entropy(logits, labels)
 
         return loss
+
+
+class InfoNCELoss:
+    def __init__(self, device, temperature=0.07):
+        self.temperature = temperature
+        self.device = device
+        self.n_views = 2
+
+    def __call__(self, features):
+        batch_size = features.shape[0] // self.n_views
+        labels = torch.cat(
+            [torch.arange(batch_size) for i in range(self.n_views)],
+            dim=0,
+        )
+        labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+        labels = labels.to(self.device)
+
+        features = F.normalize(features, dim=1)
+
+        similarity_matrix = torch.matmul(features, features.T)
+        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(self.device)
+        labels = labels[~mask].view(labels.shape[0], -1)
+        similarity_matrix = similarity_matrix[~mask].view(
+            similarity_matrix.shape[0], -1
+        )
+        positives = similarity_matrix[labels.bool()].view(labels.shape[0], -1)
+
+        # select only the negatives the negatives
+        negatives = similarity_matrix[~labels.bool()].view(
+            similarity_matrix.shape[0], -1
+        )
+
+        logits = torch.cat([positives, negatives], dim=1)
+        labels = torch.zeros(logits.shape[0], dtype=torch.long).to(self.device)
+        logits = logits / self.temperature
+        loss = F.cross_entropy(logits, labels)
+
+        return loss
+
+
+class VicregLoss:
+    def __init__(
+        self, num_features, batch_size, sim_coeff=25.0, std_coeff=25.0, cov_coeff=1.0
+    ):
+        self.num_features = num_features
+        self.batch_size = batch_size
+        self.sim_coeff = sim_coeff
+        self.std_coeff = std_coeff
+        self.cov_coeff = cov_coeff
+
+    def __call__(self, x1, x2):
+        repr_loss = F.mse_loss(x1, x2)
+
+        x1 = x1 - x1.mean(dim=0)
+        x2 = x2 - x2.mean(dim=0)
+
+        std_x1 = torch.sqrt(x1.var(dim=0) + 0.0001)
+        std_x2 = torch.sqrt(x2.var(dim=0) + 0.0001)
+        std_loss = (
+            torch.mean(F.relu(1 - std_x1)) / 2 + torch.mean(F.relu(1 - std_x2)) / 2
+        )
+
+        cov_x1 = (x1.T @ x1) / (self.batch_size - 1)
+        cov_x2 = (x2.T @ x2) / (self.batch_size - 1)
+        cov_loss = self._off_diagonal(cov_x1).pow_(2).sum().div(
+            self.num_features
+        ) + self._off_diagonal(cov_x2).pow_(2).sum().div(self.num_features)
+
+        loss = (
+            self.sim_coeff * repr_loss
+            + self.std_coeff * std_loss
+            + self.cov_coeff * cov_loss
+        )
+        return loss
+
+    def _off_diagonal(self, x):
+        n, m = x.shape
+        assert n == m
+        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()

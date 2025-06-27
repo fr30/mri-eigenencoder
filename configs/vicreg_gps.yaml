@@ -1,0 +1,32 @@
+
+wandb:
+  enabled: true
+  project: "vicreg"
+  run_name: "gps_vicreg"
+
+meta:
+  test: true
+  seed: 2136
+  num_workers: 2
+  save_model_freq: 10 # 0 means no saving
+  save_model_path: "models/gps_vicreg"
+  cache_path: null
+
+train:
+  epochs: 100
+  lr: 1e-3
+  lr_scheduler: false
+  batch_size: 256
+  lars: false
+  weight_decay: 1e-6
+  sim_coeff: 25.0
+  std_coeff: 25.0
+  cov_coeff: 1.0
+  
+encoder:
+  emb_dim: 512
+  pe_dim: 32
+  num_layers: 4
+  dropout: 0.5
+  norm: "batch" # []"batch", "layer", "graph", null]
+  attn_type: "multihead" # "multihead", "performer"

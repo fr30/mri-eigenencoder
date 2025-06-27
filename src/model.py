@@ -268,20 +268,20 @@ class GPSEncoderWithProjector(nn.Module):
             norm_out=norm_out,
             attn_type=attn_type,
         )
-
+        self.out_dim = emb_dim * 4
         self.projector = nn.Sequential(
-            nn.Linear(emb_dim, emb_dim * 4),
-            nn.BatchNorm1d(emb_dim * 4),
+            nn.Linear(emb_dim, self.out_dim),
+            nn.BatchNorm1d(self.out_dim),
             nn.ReLU(),
-            nn.Linear(emb_dim * 4, emb_dim * 4),
-            nn.BatchNorm1d(emb_dim * 4),
+            nn.Linear(self.out_dim, self.out_dim),
+            nn.BatchNorm1d(self.out_dim),
             nn.ReLU(),
-            nn.Linear(emb_dim * 4, emb_dim * 4),
-            nn.BatchNorm1d(emb_dim * 4),
+            nn.Linear(self.out_dim, self.out_dim),
+            nn.BatchNorm1d(self.out_dim),
             nn.ReLU(),
         )
         if norm_out == "batch":
-            self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
+            self.norm_out = nn.BatchNorm1d(self.out_dim, affine=False)
         elif norm_out == "sigmoid":
             self.norm_out = F.sigmoid
         else:
@@ -320,37 +320,6 @@ class BarlowTwinsGIN(nn.Module):
             emb_dim=emb_dim,
             norm_out="batch",
             enc_norm_out="none",
-        )
-
-    def forward(self, x1, x2):
-        return self.model(x1), self.model(x2)
-
-    @property
-    def encoder(self):
-        return self.model.encoder
-
-
-class BarlowTwinsGPS(nn.Module):
-    def __init__(
-        self,
-        in_channels,
-        emb_dim,
-        pe_dim,
-        num_layers,
-        dropout,
-        norm_out,
-        attn_type,
-    ):
-        super().__init__()
-
-        self.model = GPSEncoderWithProjector(
-            in_channels=in_channels,
-            emb_dim=emb_dim,
-            pe_dim=pe_dim,
-            num_layers=num_layers,
-            dropout=dropout,
-            norm_out=norm_out,
-            attn_type=attn_type,
         )
 
     def forward(self, x1, x2):
@@ -665,6 +634,37 @@ class HFMCAGPS(nn.Module):
         return self.backbone.encoder
 
 
+class BarlowTwinsGPS(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        emb_dim,
+        pe_dim,
+        num_layers,
+        dropout,
+        norm_out,
+        attn_type,
+    ):
+        super().__init__()
+
+        self.model = GPSEncoderWithProjector(
+            in_channels=in_channels,
+            emb_dim=emb_dim,
+            pe_dim=pe_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            norm_out=norm_out,
+            attn_type=attn_type,
+        )
+
+    def forward(self, x1, x2):
+        return self.model(x1), self.model(x2)
+
+    @property
+    def encoder(self):
+        return self.model.encoder
+
+
 class SimCLRGPS(nn.Module):
     def __init__(
         self,
@@ -694,3 +694,39 @@ class SimCLRGPS(nn.Module):
     @property
     def encoder(self):
         return self.backbone.encoder
+
+
+class VicREGGPS(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        emb_dim,
+        pe_dim,
+        num_layers,
+        dropout,
+        norm_out,
+        attn_type,
+    ):
+        super().__init__()
+        self.backbone = GPSEncoderWithProjector(
+            in_channels=in_channels,
+            emb_dim=emb_dim,
+            pe_dim=pe_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            norm_out=norm_out,
+            attn_type=attn_type,
+        )
+
+    def forward(self, x1, x2):
+        y1 = self.backbone(x1)
+        y2 = self.backbone(x2)
+        return y1, y2
+
+    @property
+    def encoder(self):
+        return self.backbone.encoder
+
+    @property
+    def out_dim(self):
+        return self.backbone.out_dim
