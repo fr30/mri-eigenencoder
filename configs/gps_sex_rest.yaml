@@ -1,9 +1,9 @@
 wandb:
-  run_name: "hfmca_512_freeze_linear_rest+abide"
+  run_name: "gps_hfmca_ep100_freeze_linear_rest+abide"
   # run_name: "btwins15_512_freeze_kfold"
   # run_name: "hfmca_512_nonemb_rest+abide+bsnip"
   enabled: true
-  project: "sex"
+  project: "sex-rest"
 
 meta:
   test: true
@@ -30,8 +30,8 @@ encoder:
   norm: "batch" # []"batch", "layer", "graph", null]
   attn_type: "multihead" # "multihead", "performer"
   # checkpoint_path: "models/hfmca_nonemb_rest+abide+bsnip/fmri_enc_ep200.pt" # Can be null
-  # checkpoint_path: "models/barlow_twins_graph/fmri_enc_ep15.pt" # Can be null
-  # emb_style: "none" # []"none", "replace", "concat"]
-  checkpoint_path: "models/hfmca_gps_512_rest+abide_schedule/fmri_enc_ep200.pt"
+  # checkpoint_path: "models/hfmca_gps_rest+abide_newaug/fmri_enc_ep200.pt"
+  # checkpoint_path: "models/bt_gps_rest+abide+bsnip+hcp/fmri_enc_ep25.pt"
+  checkpoint_path: "models/hfmca_gps_rest+abide/fmri_enc_ep100.pt"
   # checkpoint_path: null
   freeze: true

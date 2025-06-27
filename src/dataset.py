@@ -402,13 +402,19 @@ class HCPfMRIDataset(Dataset):
 
     def prepare_data(self, data_dir, split):
         dataset = []
+        meta = pd.read_csv(os.path.join(data_dir, "metadata.csv"), index_col=0)
+        self.num_classes = len(meta["Gender"].unique())
+        lab_to_id = {lab: i for i, lab in enumerate(meta["Gender"].unique())}
 
         for file_name in os.listdir(data_dir):
             if file_name.endswith(".npy"):
-                study_id = file_name.split(".")[0]
+                subject_id = file_name.split(".")[0]
 
-                if "_" in study_id:
-                    study_id = study_id.split("_")[-1]
+                if "_" in subject_id:
+                    subject_id = subject_id.split("_")[0]
+
+                gender = meta.loc[int(subject_id)]["Gender"]
+                label = lab_to_id[gender]
 
                 time_series = np.load(os.path.join(data_dir, file_name))
                 conn_matrix = create_corr(time_series.T)
@@ -416,6 +422,7 @@ class HCPfMRIDataset(Dataset):
                 graph = Data(
                     x=node_features,
                     edge_index=edge_index,
+                    y=torch.tensor(label, dtype=torch.long),
                 )
                 dataset.append(graph)
 
@@ -423,11 +430,13 @@ class HCPfMRIDataset(Dataset):
             dataset,
             test_size=0.2,
             random_state=42,
+            stratify=[data.y.item() for data in dataset],
         )
         dev, test = train_test_split(
             rest,
             test_size=0.5,
             random_state=42,
+            stratify=[data.y.item() for data in rest],
         )
 
         if split == "train":
@@ -438,6 +447,10 @@ class HCPfMRIDataset(Dataset):
             return test
         elif split == "full":
             return dataset
+
+    @property
+    def labels(self):
+        return torch.tensor([data.y.item() for data in self.dataset], dtype=torch.long)
 
 
 class AOMICfMRIDataset(Dataset):

@@ -10,7 +10,7 @@ import warnings
 from sklearn.model_selection import StratifiedKFold
 from src.optim import LARS
 from src.model import GPSEncoder, Classifier
-from src.dataset import RESTfMRIDataset, GPSCachedLoader, GPSConcatDataset
+from src.dataset import RESTfMRIDataset, GPSConcatDataset
 from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
 from torch_geometric.loader import DataLoader
 
@@ -94,7 +94,7 @@ def test_epoch(data_loader, model, device):
     return cum_loss, acc
 
 
-@hydra.main(version_base=None, config_path="configs", config_name="gps_sex")
+@hydra.main(version_base=None, config_path="configs", config_name="gps_sex_rest")
 def main(cfg):
     if cfg.wandb.enabled:
         run = wandb.init(
