@@ -156,10 +156,10 @@ class RESTfMRIDataset(Dataset):
 
 
 class ABIDEfMRIDataset(Dataset):
-    def __init__(self, data_dir="./Data/QLiData/ABIDE", split="full"):
+    def __init__(self, data_dir="./Data/QLiData/ABIDE", split="full", label="asd"):
         super().__init__()
         self.num_classes = None
-        self.dataset = self.prepare_data(data_dir, split)
+        self.dataset = self.prepare_data(data_dir, split, label)
         self.num_nodes = self.dataset[0].x.shape[0] if self.dataset else 0
 
     def __getitem__(self, idx):
@@ -168,22 +168,32 @@ class ABIDEfMRIDataset(Dataset):
     def __len__(self):
         return len(self.dataset)
 
-    def prepare_data(self, data_dir, split):
+    def prepare_data(self, data_dir, split, label):
         dataset = []
+        metadata = pd.read_csv(os.path.join(data_dir, "metadata.csv"), index_col=1)
 
         for file_name in os.listdir(data_dir):
             if file_name.endswith(".npy"):
-                study_id = file_name.split(".")[0]
+                subid = file_name.split(".")[0]
 
-                if "_" in study_id:
-                    study_id = study_id.split("_")[-1]
+                if "_" in subid:
+                    subid = int(subid.split("_")[0])
 
                 time_series = np.load(os.path.join(data_dir, file_name))
                 conn_matrix = create_corr(time_series.T)
                 node_features, edge_index = corr_to_graph(conn_matrix)
+
+                if label == "asd":
+                    y = metadata.loc[subid, "DX_GROUP"] - 1
+                elif label == "sex":
+                    y = metadata.loc[subid, "SEX"] - 1
+                else:
+                    raise ValueError("Label must be 'asd' or 'sex'")
+
                 graph = Data(
                     x=node_features,
                     edge_index=edge_index,
+                    y=torch.tensor(y, dtype=torch.long),
                 )
                 dataset.append(graph)
 
@@ -206,6 +216,10 @@ class ABIDEfMRIDataset(Dataset):
             return test
         elif split == "full":
             return dataset
+
+    @property
+    def labels(self):
+        return torch.tensor([data.y.item() for data in self.dataset], dtype=torch.long)
 
 
 class ABIDEfMRIDataset2(Dataset):
