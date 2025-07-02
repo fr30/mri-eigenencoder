@@ -42,6 +42,23 @@ class IdentityScheduler:
         pass
 
 
+class EarlyStopping:
+    def __init__(self, patience=20):
+        self.patience = patience
+        self.best_metric = float("inf")
+        self.counter = 0
+        self.best_epoch = 0
+
+    def check(self, metric, epoch):
+        if metric < self.best_metric:
+            self.best_metric = metric
+            self.counter = 0
+            self.best_epoch = epoch
+        else:
+            self.counter += 1
+        return self.counter >= self.patience
+
+
 def patch_extraction(Xb, sizePatches=128, Npatches=1):
     """
     3D patch extraction

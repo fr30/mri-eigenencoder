@@ -4,7 +4,7 @@ wandb:
   # run_name: "gps_simclr_freeze_linear_rest+abide"
   # run_name: "gps_bt_freeze_linear_rest+abide"
   # run_name: "gps_vicreg_freeze_linear_rest+abide"
-  enabled: false
+  enabled: true
   project: "sex-abide"
 
 meta:
@@ -18,13 +18,13 @@ train:
   lr_scheduler: false # Best with set to true
   batch_size: 256
   lars: false
-  # weight_decay: 0 
   weight_decay: 1e-6
 
 classifier:
-  linear: false
+  linear: true
 
 encoder:
+  in_channels: 116
   emb_dim: 512
   pe_dim: 32
   num_layers: 4
@@ -36,4 +36,4 @@ encoder:
   # checkpoint_path: "models/bt_gps_rest+abide/fmri_enc_ep25.pt"
   # checkpoint_path: "models/vicreg_gps_rest+abide/fmri_enc_ep50.pt"
   checkpoint_path: null
-  freeze: false
+  freeze: true
