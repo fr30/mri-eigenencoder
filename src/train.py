@@ -128,7 +128,7 @@ def run_training_mc(
             )
             print(f"Epoch time: {epoch_time:.2f}s", flush=True)
 
-        if early_stopper is not None and early_stopper.check(1 - val_acc, epoch):
+        if early_stopper is not None and early_stopper.check(val_acc, epoch):
             break
 
     return train_accs, train_losses, val_accs, val_losses
@@ -212,7 +212,7 @@ def run_training_bc(
             )
             print(f"Epoch time: {epoch_time:.2f}s", flush=True)
 
-        if early_stopper is not None and early_stopper.check(1 - val_acc, epoch):
+        if early_stopper is not None and early_stopper.check(val_acc, epoch):
             break
 
     return train_accs, train_losses, val_accs, val_losses
