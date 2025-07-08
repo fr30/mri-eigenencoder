@@ -468,9 +468,10 @@ class HCPfMRIDataset(Dataset):
 
 
 class AOMICfMRIDataset(Dataset):
-    def __init__(self, data_dir="./Data/AOMIC/", split="full"):
+    def __init__(self, data_dir="./Data/AOMIC/", split="full", label="sex"):
         super().__init__()
-        self.dataset = self.prepare_data(data_dir, split)
+        self.dataset = self.prepare_data(data_dir, split, label)
+        self.num_nodes = self.dataset[0].x.shape[0] if self.dataset else 0
 
     def __getitem__(self, idx):
         return self.dataset[idx]
@@ -478,26 +479,111 @@ class AOMICfMRIDataset(Dataset):
     def __len__(self):
         return len(self.dataset)
 
-    def prepare_data(self, data_dir, split):
+    def prepare_data(self, data_dir, split, label):
         dataset = []
-        data_dir = os.path.join(data_dir, "AAL116")
+        # data_dir = os.path.join(data_dir, "timeseries")
+        meta = pd.read_csv(
+            os.path.join(data_dir, "participants.tsv"), index_col=0, sep="\t"
+        )
 
-        for file_name in os.listdir(data_dir):
-            if file_name.endswith(".npy"):
-                conn_matrix = np.load(os.path.join(data_dir, file_name))
-                node_features, edge_index = corr_to_graph(conn_matrix)
-                graph = Data(
-                    x=torch.tensor(node_features, dtype=torch.float),
-                    edge_index=torch.tensor(edge_index, dtype=torch.long),
-                )
-                dataset.append(graph)
+        data_dir = os.path.join(data_dir, "timeseries")
+        # for subid in meta.index:
+        for filename in os.listdir(data_dir):
+            if not filename.endswith(".npy"):
+                continue
 
-        if split == "full":
-            return dataset
-        else:
-            raise ValueError(
-                "Invalid split. Use 'full' for HCP dataset as it does not have train/dev/test splits."
+            filepath = os.path.join(data_dir, filename)
+            time_series = np.load(filepath)
+            conn_matrix = create_corr(time_series.T)
+            node_features, edge_index = corr_to_graph(conn_matrix)
+
+            subid = filename.split(".")[0]
+
+            if label == "sex":
+                y = meta.loc[subid]["sex"]
+                y = 0 if y == "male" else 1
+            elif label == "age":
+                y = meta.loc[subid]["age"]
+            else:
+                raise ValueError(f"Unsupported label: {label}")
+
+            graph = Data(
+                x=torch.tensor(node_features, dtype=torch.float),
+                edge_index=torch.tensor(edge_index, dtype=torch.long),
+                y=torch.tensor(y),
             )
+            dataset.append(graph)
+
+        if label == "sex":
+            train, rest = train_test_split(
+                dataset,
+                test_size=0.2,
+                random_state=42,
+                stratify=[data.y.item() for data in dataset],
+            )
+            dev, test = train_test_split(
+                rest,
+                test_size=0.5,
+                random_state=42,
+                stratify=[data.y.item() for data in rest],
+            )
+        elif label == "age":
+            train, rest = train_test_split(
+                dataset,
+                test_size=0.2,
+                random_state=42,
+            )
+            dev, test = train_test_split(
+                rest,
+                test_size=0.5,
+                random_state=42,
+            )
+
+        if split == "train":
+            return train
+        elif split == "dev":
+            return dev
+        elif split == "test":
+            return test
+        elif split == "full":
+            return dataset
+
+    @property
+    def labels(self):
+        return torch.tensor([data.y.item() for data in self.dataset])
+
+
+# class AOMICfMRIDataset(Dataset):
+#     def __init__(self, data_dir="./Data/AOMIC/", split="full"):
+#         super().__init__()
+#         self.dataset = self.prepare_data(data_dir, split)
+
+#     def __getitem__(self, idx):
+#         return self.dataset[idx]
+
+#     def __len__(self):
+#         return len(self.dataset)
+
+#     def prepare_data(self, data_dir, split):
+#         dataset = []
+#         data_dir = os.path.join(data_dir, "AAL116")
+
+#         for file_name in os.listdir(data_dir):
+#             if file_name.endswith(".npy"):
+#                 conn_matrix = np.load(os.path.join(data_dir, file_name))
+#                 node_features, edge_index = corr_to_graph(conn_matrix)
+#                 graph = Data(
+#                     x=torch.tensor(node_features, dtype=torch.float),
+#                     edge_index=torch.tensor(edge_index, dtype=torch.long),
+#                 )
+#                 dataset.append(graph)
+
+#         if split == "full":
+#             return dataset
+#         else:
+#             raise ValueError(
+#                 "Invalid split. Use 'full' for HCP dataset as it does not have train/dev/test splits."
+#             )
 
 
 class BSNIPfMRIDataset(Dataset):

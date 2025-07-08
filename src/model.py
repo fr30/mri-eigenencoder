@@ -177,6 +177,8 @@ class Classifier(nn.Module):
     ):
         super().__init__()
         self.encoder = encoder
+        self.linear = linear
+
         if linear:
             self.cls_head = nn.Linear(encoder.emb_dim, num_classes)
         else:
