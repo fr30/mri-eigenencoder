@@ -1,20 +1,21 @@
 wandb:
-  # run_name: "gps"
-  run_name: "gps_hfmca_freeze_linear_rest+abide"
+  # run_name: "gps_linear_1e-2"
+  # run_name: "gps_hfmca_freeze_linear_rest+abide_1e-2"
   # run_name: "gps_simclr_freeze_linear_rest+abide"
   # run_name: "gps_bt_freeze_linear_rest+abide"
   # run_name: "gps_vicreg_freeze_linear_rest+abide"
+  run_name: "gps_hfmcanl_ep150_freeze_linear_rest+abide"
   enabled: true
-  project: "bsnip"
+  project: "adhd"
 
 meta:
   test: true
-  seed: 2198
+  seed: 2177
   num_workers: 1
 
 train:
   epochs: 150
-  lr: 1e-3
+  lr: 1e-2
   lr_scheduler: false # Best with set to true
   batch_size: 256
   lars: false
@@ -31,9 +32,10 @@ encoder:
   dropout: 0.5
   norm: "batch" # []"batch", "layer", "graph", null]
   attn_type: "multihead" # "multihead", "performer"
+  # checkpoint_path: null
   # checkpoint_path: "models/hfmca_gps_rest+abide/fmri_enc_ep200.pt"
   # checkpoint_path: "models/simclr_gps_rest+abide/fmri_enc_ep25.pt"
   # checkpoint_path: "models/bt_gps_rest+abide/fmri_enc_ep25.pt"
   # checkpoint_path: "models/vicreg_gps_rest+abide/fmri_enc_ep50.pt"
-  checkpoint_path: null
+  checkpoint_path: "models/gps_hfmca_512_nl/fmri_enc_ep150.pt"
   freeze: true

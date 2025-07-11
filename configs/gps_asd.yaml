@@ -1,6 +1,6 @@
 wandb:
-  # run_name: "gps"
-  run_name: "gps_hfmca_freeze_linear_rest+abide"
+  run_name: "gps"
+  # run_name: "gps_hfmca_freeze_linear_rest+abide"
   # run_name: "gps_simclr_freeze_linear_rest+abide"
   # run_name: "gps_bt_freeze_linear_rest+abide"
   # run_name: "gps_vicreg_freeze_linear_rest+abide"
@@ -20,7 +20,7 @@ train:
   lars: false
   weight_decay: 1e-6
 
-classifier:
+mlp_head:
   linear: true
 
 encoder:
@@ -31,9 +31,9 @@ encoder:
   dropout: 0.5
   norm: "batch" # []"batch", "layer", "graph", null]
   attn_type: "multihead" # "multihead", "performer"
+  checkpoint_path: null
   # checkpoint_path: "models/hfmca_gps_rest+abide/fmri_enc_ep200.pt"
   # checkpoint_path: "models/simclr_gps_rest+abide/fmri_enc_ep25.pt"
   # checkpoint_path: "models/bt_gps_rest+abide/fmri_enc_ep25.pt"
   # checkpoint_path: "models/vicreg_gps_rest+abide/fmri_enc_ep50.pt"
-  checkpoint_path: null
   freeze: true

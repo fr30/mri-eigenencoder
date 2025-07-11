@@ -43,13 +43,13 @@ class IdentityScheduler:
 
 
 class EarlyStopping:
-    def __init__(self, patience=20, direction="max"):
+    def __init__(self, direction="max"):
         if direction not in ["max", "min"]:
             raise ValueError("Direction must be either 'max' or 'min'.")
 
         self.best_metric = np.inf
         self.direction = direction
-        self.patience = patience
+        self.patience = 50
         self.counter = 0
         self.best_epoch = 0
 

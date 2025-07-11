@@ -20,7 +20,7 @@ train:
   lars: false
   weight_decay: 1e-6
 
-classifier:
+mlp_head:
   linear: true
 
 encoder:

@@ -168,7 +168,7 @@ class GPSEncoder(torch.nn.Module):
         return x
 
 
-class Classifier(nn.Module):
+class MLPHead(nn.Module):
     def __init__(
         self,
         encoder,

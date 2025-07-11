@@ -1,11 +1,11 @@
 wandb:
-  # run_name: "gps"
-  run_name: "gps_hfmca_freeze_linear_rest+abide"
+  run_name: "gps_freeze_linear"
+  # run_name: "gps_hfmca_freeze_linear_rest+abide"
   # run_name: "gps_simclr_freeze_linear_rest+abide"
   # run_name: "gps_bt_freeze_linear_rest+abide"
   # run_name: "gps_vicreg_freeze_linear_rest+abide"
-  enabled: true
-  project: "bsnip"
+  enabled: false
+  project: "age-abide"
 
 meta:
   test: true
@@ -31,9 +31,9 @@ encoder:
   dropout: 0.5
   norm: "batch" # []"batch", "layer", "graph", null]
   attn_type: "multihead" # "multihead", "performer"
+  checkpoint_path: null
   # checkpoint_path: "models/hfmca_gps_rest+abide/fmri_enc_ep200.pt"
   # checkpoint_path: "models/simclr_gps_rest+abide/fmri_enc_ep25.pt"
   # checkpoint_path: "models/bt_gps_rest+abide/fmri_enc_ep25.pt"
   # checkpoint_path: "models/vicreg_gps_rest+abide/fmri_enc_ep50.pt"
-  checkpoint_path: null
   freeze: true
