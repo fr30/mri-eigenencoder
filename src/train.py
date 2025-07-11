@@ -3,12 +3,12 @@ import torch
 import torch.nn.functional as F
 
 from src.optim import LARS
-from src.model import GPSEncoder, Classifier
+from src.model import GPSEncoder, MLPHead
 from src.utils import CosDelayWithWarmupScheduler, IdentityScheduler
 from torch_geometric.loader import DataLoader
 
 
-def setup_experiment_gps(cfg, train_set, val_set, device):
+def setup_experiment_gps(cfg, train_set, val_set, device, num_classes=1):
     train_dataloader = DataLoader(
         dataset=train_set,
         batch_size=cfg.train.batch_size,
@@ -38,10 +38,10 @@ def setup_experiment_gps(cfg, train_set, val_set, device):
             torch.load(cfg.encoder.checkpoint_path, weights_only=True)
         )
 
-    model = Classifier(
+    model = MLPHead(
         encoder=encoder,
-        num_classes=1,
-        linear=cfg.classifier.linear,
+        num_classes=num_classes,
+        linear=cfg.mlp_head.linear,
     ).to(device)
 
     if cfg.encoder.freeze:
@@ -64,10 +64,10 @@ def setup_experiment_gps(cfg, train_set, val_set, device):
             weight_decay_filter=True,
             lars_adaptation_filter=True,
         )
-    elif cfg.classifier.linear:
+    elif cfg.mlp_head.linear:
         optimizer = torch.optim.SGD(
             model.parameters(),
-            lr=1e-2,
+            lr=cfg.train.lr,
             momentum=0.9,
         )
     else:
@@ -257,3 +257,85 @@ def test_epoch_bc(data_loader, model, device):
     acc = correct / len(data_loader.dataset)
 
     return cum_loss, acc
+
+
+def run_training_reg(
+    num_epochs,
+    train_dataloader,
+    val_dataloader,
+    model,
+    optimizer,
+    scheduler,
+    device,
+    early_stopper=None,
+    verbose=False,
+):
+    train_maes = []
+    train_mses = []
+    val_maes = []
+    val_mses = []
+
+    for epoch in range(1, num_epochs + 1):
+        start = time.time()
+        train_mse, train_mae = train_epoch_reg(
+            train_dataloader, model, optimizer, scheduler, device
+        )
+        epoch_time = time.time() - start
+        val_mse, val_mae = test_epoch_reg(val_dataloader, model, device)
+
+        train_maes.append(train_mae)
+        train_mses.append(train_mse)
+        val_maes.append(val_mae)
+        val_mses.append(val_mse)
+
+        if verbose:
+            print(
+                f"Epoch: {epoch}\nTrain MSE: {train_mse:.4f}, Train MAE: {train_mae:.4f}, Val MSE: {val_mse:.4f}, Val MAE: {val_mae:.4f}"
+            )
+            print(f"Epoch time: {epoch_time:.2f}s", flush=True)
+
+        if early_stopper is not None and early_stopper.check(val_mae, epoch):
+            break
+
+    return train_maes, train_mses, val_maes, val_mses
+
+
+def train_epoch_reg(data_loader, model, optimizer, scheduler, device):
+    model.train()
+    cum_mse = 0
+    cum_mae = 0
+
+    for data in data_loader:
+        data = data.to(device)
+        scheduler.adjust_lr(optimizer)
+        optimizer.zero_grad()
+        out = model(data)
+        loss = F.mse_loss(out, data.y.to(torch.float32))
+        loss.backward()
+        optimizer.step()
+        cum_mse += loss.item()
+        cum_mae += F.l1_loss(out, data.y).item()
+
+    cum_mse = cum_mse * data_loader.batch_size / len(data_loader.dataset)
+    cum_mae = cum_mae * data_loader.batch_size / len(data_loader.dataset)
+
+    return cum_mse, cum_mae
+
+
+@torch.no_grad()
+def test_epoch_reg(data_loader, model, device):
+    model.eval()
+    cum_mse = 0
+    cum_mae = 0
+
+    for data in data_loader:
+        data = data.to(device)
+        out = model(data)
+        loss = F.mse_loss(out, data.y.to(torch.float32))
+        cum_mse += loss.item()
+        cum_mae += F.l1_loss(out, data.y).item()
+
+    cum_mse = cum_mse * data_loader.batch_size / len(data_loader.dataset)
+    cum_mae = cum_mae * data_loader.batch_size / len(data_loader.dataset)
+
+    return cum_mse, cum_mae
