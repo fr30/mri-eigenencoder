@@ -494,21 +494,21 @@ class ADHD200fMRIDataset(Dataset):
             subid = int(filename.split(".")[0].split("-")[1])
 
             if label == "sex":
-                y = meta.loc[subid]["Gender"]
+                y = meta.loc[subid]["gender"]
 
                 if np.isnan(y):
                     continue
 
                 y = np.astype(y, int)
             elif label == "adhd":
-                y = meta.loc[subid]["DX"]
+                y = meta.loc[subid]["label"]
 
-                if y != "pending":
-                    y = 1 if y != "0" else 0
-                else:
+                if np.isnan(y):
                     continue
+
+                y = int(y)
             elif label == "age":
-                y = meta.loc[subid]["Age"]
+                y = meta.loc[subid]["age"]
             else:
                 raise ValueError(f"Unsupported label: {label}")
 

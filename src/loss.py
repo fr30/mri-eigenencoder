@@ -26,9 +26,9 @@ class HFMCALoss:
         RFG[:input_dim, input_dim:] = P
         RFG[input_dim:, :input_dim] = P.T
 
-        RFG = RFG + torch.eye((RFG.shape[0])).to(self.device) * 1e-1
-        RF = RF + torch.eye((RF.shape[0])).to(self.device) * 1e-1
-        RG = RG + torch.eye((RG.shape[0])).to(self.device) * 1e-1
+        RFG = RFG + torch.eye((RFG.shape[0])).to(self.device) * 1e-3
+        RF = RF + torch.eye((RF.shape[0])).to(self.device) * 1e-3
+        RG = RG + torch.eye((RG.shape[0])).to(self.device) * 1e-3
 
         return torch.logdet(RFG) - torch.logdet(RF) - torch.logdet(RG)
 
