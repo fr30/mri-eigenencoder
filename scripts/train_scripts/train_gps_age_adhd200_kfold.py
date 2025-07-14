@@ -5,14 +5,14 @@ import wandb
 import warnings
 
 from sklearn.model_selection import KFold, train_test_split
-from src.dataset import ABIDEfMRIDataset, GPSConcatDataset
+from src.dataset import ADHD200fMRIDataset, GPSConcatDataset
 from src.utils import EarlyStopping
 from src.train import setup_experiment_gps, run_training_reg
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-@hydra.main(version_base=None, config_path="configs", config_name="gps_age_abide")
+@hydra.main(version_base=None, config_path="configs", config_name="gps_age_adhd200")
 def main(cfg):
     if cfg.wandb.enabled:
         run = wandb.init(
@@ -34,10 +34,10 @@ def main(cfg):
     else:
         device = torch.device("cpu")
 
-    abide_dataset = ABIDEfMRIDataset(split="full", label="age")
-    labels = abide_dataset.labels
+    adhd_dataset = ADHD200fMRIDataset(split="full", label="age")
+    labels = adhd_dataset.labels
 
-    dataset = GPSConcatDataset([abide_dataset])
+    dataset = GPSConcatDataset([adhd_dataset])
     kf = KFold(
         n_splits=5,
         shuffle=True,
