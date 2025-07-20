@@ -244,16 +244,6 @@ class ABIDEfMRIDataset(Dataset):
 
 
 class COBREfMRIDataset(Dataset):
-    FILE_STRUCTURES = {
-        "UCLA_COBRE_ALL116.mat": ["UCLA_HC", "UCLA_SZ"],
-        "COBRE_HC_SZ_AAL116_Updated.mat": [
-            "COBRE_1_SC_NS_",
-            "COBRE_2_SC_S_",
-            "COBRE_3_HC_NS_",
-            "COBRE_4_HC_S_",
-        ],
-    }
-
     def __init__(
         self,
         data_dir="./Data/COBRE",
@@ -261,61 +251,62 @@ class COBREfMRIDataset(Dataset):
     ):
         super().__init__()
         self.dataset = self.prepare_data(data_dir, split)
-
-    def prepare_data(self, data_dir, split):
-        data, sites = self._preprocess_raw_signal(data_dir)
-        train, test = train_test_split(
-            pd.DataFrame(sites), test_size=0.2, random_state=42, stratify=sites
-        )
-        dev, test = train_test_split(
-            pd.DataFrame(sites[test.index]),
-            test_size=0.5,
-            random_state=42,
-            stratify=sites[test.index],
-        )
-
-        dataset = []
-
-        for signal in data:
-            corr = create_corr(signal)
-            node_features, edge_index = corr_to_graph(corr)
-            graph = Data(
-                x=torch.tensor(node_features, dtype=torch.float),
-                edge_index=torch.tensor(edge_index, dtype=torch.long),
-            )
-            dataset.append(graph)
-
-        if split == "train":
-            return [dataset[i] for i in train.index]
-        elif split == "dev":
-            return [dataset[i] for i in dev.index]
-        elif split == "test":
-            return [dataset[i] for i in test.index]
-        elif split == "full":
-            return dataset
-        else:
-            raise ValueError("Invalid split. Use 'train', 'dev', 'test' or 'full'.")
-
-    def _preprocess_raw_signal(self, data_dir):
-        corr_matrices = []
-        sites = []
-
-        for file_name, sub in self.FILE_STRUCTURES.items():
-            data_path = os.path.join(data_dir, file_name)
-            data = scio.loadmat(data_path)
-            for s in sub:
-                for signal in data[s]:
-                    corr_matrix = create_corr(signal[0])
-                    corr_matrices.append(corr_matrix)
-                    sites.append(s)
-
-        return np.array(corr_matrices), np.array(sites)
+        self.num_nodes = self.dataset[0].x.shape[0] if self.dataset else 0
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
         return self.dataset[idx]
+
+    def prepare_data(self, data_dir, split):
+        conn_matrices = np.load(os.path.join(data_dir, "fcs.npy"))
+        labels = np.load(os.path.join(data_dir, "labels.npy"))
+        label_to_id = {
+            "HC": 0,
+            "SZ": 1,
+        }
+        labels = np.array([label_to_id[label] for label in labels])
+        dataset = []
+
+        for conn_matrix, label in zip(conn_matrices, labels):
+            node_features, edge_index = corr_to_graph(conn_matrix)
+
+            if np.isnan(conn_matrix).any():
+                continue
+
+            graph = Data(
+                x=node_features,
+                edge_index=edge_index,
+                y=torch.tensor([label], dtype=torch.long),
+            )
+            dataset.append(graph)
+
+        train, rest = train_test_split(
+            dataset,
+            test_size=0.2,
+            random_state=42,
+            stratify=[data.y.item() for data in dataset],
+        )
+        dev, test = train_test_split(
+            rest,
+            test_size=0.5,
+            random_state=42,
+            stratify=[data.y.item() for data in rest],
+        )
+
+        if split == "train":
+            return train
+        elif split == "dev":
+            return dev
+        elif split == "test":
+            return test
+        elif split == "full":
+            return dataset
+
+    @property
+    def labels(self):
+        return torch.tensor([data.y.item() for data in self.dataset])
 
 
 class HCPfMRIDataset(Dataset):
@@ -499,7 +490,7 @@ class ADHD200fMRIDataset(Dataset):
                 if np.isnan(y):
                     continue
 
-                y = np.astype(y, int)
+                y = int(y)
             elif label == "adhd":
                 y = meta.loc[subid]["label"]
 
