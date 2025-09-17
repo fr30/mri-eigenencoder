@@ -570,8 +570,8 @@ class BSNIPfMRIDataset(Dataset):
     def prepare_data(self, data_dir, split):
         dataset = []
         meta = pd.read_csv(os.path.join(data_dir, "bsnip_label.csv"), index_col=1)
-        self.num_classes = len(meta.group.unique())
-        lab_to_id = {lab: i for i, lab in enumerate(meta.group.unique())}
+        self.num_classes = 3
+        lab_to_id = {"NC": 0, "SZ": 1, "BP": 2}
 
         for file_name in os.listdir(data_dir):
             if file_name.endswith(".npy"):
@@ -581,6 +581,10 @@ class BSNIPfMRIDataset(Dataset):
                     study_id = study_id.split("_")[-1]
 
                 group = meta.loc[study_id].group
+
+                if group not in lab_to_id:
+                    continue
+
                 label = lab_to_id[group]
 
                 time_series = np.load(os.path.join(data_dir, file_name))

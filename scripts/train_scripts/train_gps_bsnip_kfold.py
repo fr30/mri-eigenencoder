@@ -75,6 +75,7 @@ def main(cfg):
                 train_set=inner_train_set,
                 val_set=inner_val_set,
                 device=device,
+                num_classes=dataset.num_classes,
             )
         )
 
@@ -101,10 +102,11 @@ def main(cfg):
                 train_set=train_set,
                 val_set=val_set,
                 device=device,
+                num_classes=dataset.num_classes,
             )
         )
         print(f"Fold: {fold + 1}, Max epoch: {max_epoch}")
-        train_accs, train_losses, val_accs, val_losses = run_training_bc(
+        train_accs, train_losses, val_accs, val_losses = run_training_mc(
             num_epochs=max_epoch + early_stopper.patience,
             train_dataloader=train_dataloader,
             val_dataloader=val_dataloader,

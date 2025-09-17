@@ -107,7 +107,7 @@ class GPSEncoder(torch.nn.Module):
         emb_dim=512,
         pe_dim=8,
         num_layers=10,
-        norm_out="batch_norm",  # ['sigmoid', 'batch_norm', 'none']
+        norm_out="batch",  # ['sigmoid', 'batch', 'none']
         attn_type="multihead",  # 'multihead', 'performer'
         dropout=0.5,
     ):
@@ -138,7 +138,7 @@ class GPSEncoder(torch.nn.Module):
             self.convs, redraw_interval=1000 if attn_type == "performer" else None
         )
 
-        if norm_out == "batch_norm":
+        if norm_out == "batch":
             self.norm_out = nn.BatchNorm1d(emb_dim * 4, affine=False)
         elif norm_out == "sigmoid":
             self.norm_out = F.sigmoid
@@ -279,8 +279,6 @@ class GPSEncoderWithProjector(nn.Module):
             nn.BatchNorm1d(self.out_dim),
             nn.ReLU(),
             nn.Linear(self.out_dim, self.out_dim),
-            nn.BatchNorm1d(self.out_dim),
-            nn.ReLU(),
         )
         if norm_out == "batch":
             self.norm_out = nn.BatchNorm1d(self.out_dim, affine=False)
@@ -501,9 +499,6 @@ class SFCNEncoderWithProjector(nn.Module):
         x = self.encoder(x)
         x = self.projector(x)
         x = self.norm_out(x)
-        # Try replacing batchnorm with sigmoid
-        # Add some noise to input
-        # Run for fewer epochs
         return x
 
 
@@ -608,7 +603,7 @@ class HFMCAGPS(nn.Module):
         nviews,
     ):
         super().__init__()
-        self.backbone = GPSEncoderWithProjector(
+        self.backbone = GPSEncoder(
             in_channels=in_channels,
             emb_dim=emb_dim,
             pe_dim=pe_dim,
@@ -617,23 +612,35 @@ class HFMCAGPS(nn.Module):
             norm_out=norm_out,
             attn_type=attn_type,
         )
-        self.final_net = SimpleCNN(4 * emb_dim, 4 * emb_dim, emb_dim, nviews)
+        self.pl = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim * 4),
+            nn.BatchNorm1d(emb_dim * 4),
+            nn.ReLU(),
+            nn.Linear(emb_dim * 4, emb_dim * 4),
+            nn.BatchNorm1d(emb_dim * 4),
+            nn.ReLU(),
+            nn.Linear(emb_dim * 4, emb_dim * 4),
+            nn.BatchNorm1d(emb_dim * 4),
+        )
+        self.ph = SimpleCNN(emb_dim, 4 * emb_dim, 4 * emb_dim, nviews)
+
         self.nviews = nviews
 
     def forward(self, x):
         bsize = x.batch_size // self.nviews
-        y = self.backbone(x)
-        y = y.squeeze(-1).squeeze(-1)
-        y = torch.stack([y[bsize * k : bsize * (k + 1)] for k in range(0, self.nviews)])
-        y = y.permute(1, 2, 0)
+        z = self.backbone(x)
+        zl = self.pl(z)
+        zl = torch.stack(
+            [zl[bsize * k : bsize * (k + 1)] for k in range(0, self.nviews)]
+        )
+        zl = zl.permute(1, 2, 0)
+        zh = self.ph(z.reshape(self.nviews, bsize, -1).permute(1, 2, 0)).squeeze(-1)
 
-        y_dash = self.final_net(y).squeeze(-1)
-
-        return y, y_dash
+        return zl, zh
 
     @property
     def encoder(self):
-        return self.backbone.encoder
+        return self.backbone
 
 
 class BarlowTwinsGPS(nn.Module):
